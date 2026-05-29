@@ -1,0 +1,27 @@
+{
+  "_说明": "复制此文件为 config.json，填入你的认证信息。config.json 已在 .gitignore 中，不会被提交。",
+
+  "user_id":    "Ct2ZgE8u",
+  "_user_id说明": "从 JWT(ones-lt) 中解析的 org_user_uuid，程序启动时会自动提示",
+
+  "auth_token": "粘贴 ones-lt cookie 的完整值（JWT 格式，约1小时过期，过期时程序会提示更新）",
+
+  "team_uuid":  "SpBJdKsD",
+  "_team_uuid说明": "浏览器 URL 中 /team/{team_uuid}/",
+
+  "session_id": "512a26a8-edcb-4659-7592-e836a425d1d1",
+  "_session_id说明": "ones-ids-sid cookie 值，有效期数月，用于 token 自动刷新",
+
+  "_optional": "以下为可选配置",
+
+  "overtime_daily_max": 4,
+  "_overtime说明": "加班模式每天最多额外记录的小时数，默认 4h（即 8+4=12h/天上限）",
+
+  "extra_holidays": {
+    "_说明": "覆盖或补充内置节假日（2025官方已内置，2026为估算）",
+    "off":        [],
+    "on":         [],
+    "remove_off": [],
+    "remove_on":  []
+  }
+}
