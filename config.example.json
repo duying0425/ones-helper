@@ -23,5 +23,26 @@
     "on":         [],
     "remove_off": [],
     "remove_on":  []
-  }
+  },
+
+  "workflow": {
+    "任务": [
+      {"status": "未开始", "button": "开始任务"},
+      {"status": "进行中", "button": "完成任务",  "comment": "已经完成啦"},
+      {"status": "已完成"}
+    ],
+    "工作任务": [
+      {"status": "未开始",     "button": "开始任务"},
+      {"status": "进行中",     "button": "完成审核中", "comment": "已经完成啦"},
+      {"status": "完成审核中", "button": "已完成", "comment": "已经完成啦"},
+      {"status": "已完成"}
+    ]
+  },
+  "_workflow说明": [
+    "key    : 工作项类型名，与 ONES 中显示的名称一致",
+    "status : 任务当前状态名（用于过滤要处理的任务）",
+    "button : ONES 流转按钮名（抓包 /v2/transitions 接口的 name 字段）",
+    "comment: 可选，执行该步骤时附带的评论；不填则不留评论",
+    "最后一项只需要 status，表示终态，不需要 button"
+  ]
 }

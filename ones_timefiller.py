@@ -15,6 +15,7 @@ import sys
 import re
 import argparse
 import ssl
+import time
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -94,6 +95,8 @@ def load_config():
             "auth_token": "ones-lt cookie 的值",
             "team_uuid":  "SpBJdKsD",
             "session_id": "ones-ids-sid cookie 的值（用于自动刷新 token）",
+            "workflow":            ["未开始", "进行中", "完成审核中", "已完成"],
+            "transition_comment":  "已经完成啦",
         }, ensure_ascii=False, indent=2))
         print("\n获取方法: 浏览器 F12 → Application → Cookies → ones.reachauto.com")
         sys.exit(1)
@@ -310,6 +313,26 @@ def _gql(cfg, team_uuid, query, tag="", debug=False):
 # 状态分类中文名
 _CAT_CN = {"to_do": "未开始", "in_progress": "进行中", "done": "已完成"}
 
+
+def _fetch_issue_types(cfg, team_uuid, tasks, debug=False):
+    """
+    GraphQL 查询补全 tasks 的 _issue_type 字段（工作项类型显示名称）。
+    alternativeIssueType.name 是 ONES 中的显示名，issueType 本身不含 name。
+    """
+    if not tasks:
+        return
+    uuid_set = {t["uuid"] for t in tasks if t.get("uuid")}
+    uuid_map = {t["uuid"]: t for t in tasks}
+    q = ('{ tasks(filter:{assign:{uuid_in:["%s"]}},limit:200)'
+         '{ uuid alternativeIssueType { name } } }') % cfg["user_id"]
+    gdata = _gql(cfg, team_uuid, q, debug=debug)
+    for t in (gdata or {}).get("tasks") or []:
+        uuid = t.get("uuid", "")
+        if uuid in uuid_set:
+            itype = (t.get("alternativeIssueType") or {}).get("name", "")
+            uuid_map[uuid]["_issue_type"] = itype
+
+
 def fetch_tasks(cfg, team_uuid, debug=False):
     """
     OQL 查询：我负责的、未完成（to_do + in_progress）任务。
@@ -344,27 +367,30 @@ def fetch_tasks(cfg, team_uuid, debug=False):
             cat       = status.get("category", "")
             sname     = status.get("name", _CAT_CN.get(cat, cat))
             suuid     = status.get("uuid", "")
-            remaining = (item.get("field020") or 0) / 100000.0
-            actual    = (item.get("field019") or 0) / 100000.0  # 总已填（跨月）
-            estimated = round(actual + remaining, 1)
+            remaining   = (item.get("field020") or 0) / 100000.0
+            actual      = (item.get("field019") or 0) / 100000.0  # 总已填（跨月）
+            estimated   = round(actual + remaining, 1)
             # 日期字段：toDate() 返回 "YYYY-MM-DD" 字符串或 None
-            plan_start = item.get("field027") or ""
-            plan_end   = item.get("field028") or ""
+            plan_start  = item.get("field027") or ""
+            plan_end    = item.get("field028") or ""
             tasks.append({
-                "uuid":         uuid,
-                "summary":      name,
-                "_proj":        pname,
-                "_display":     f"[{pname}] {name}" if pname else name,
-                "_done":        False,
-                "_remaining":   remaining,
-                "_estimated":   estimated,
-                "_actual":      actual,
-                "_plan_start":  plan_start,
-                "_plan_end":    plan_end,
-                "_category":    cat,
-                "_status_name": sname,
-                "_status_uuid": suuid,
+                "uuid":          uuid,
+                "summary":       name,
+                "_proj":         pname,
+                "_display":      f"[{pname}] {name}" if pname else name,
+                "_done":         False,
+                "_remaining":    remaining,
+                "_estimated":    estimated,
+                "_actual":       actual,
+                "_plan_start":   plan_start,
+                "_plan_end":     plan_end,
+                "_category":     cat,
+                "_status_name":  sname,
+                "_status_uuid":  suuid,
+                "_issue_type":   "",
             })
+        # OQL 不支持 issueType，批量用 GraphQL 补全
+        _fetch_issue_types(cfg, team_uuid, tasks, debug=debug)
         return tasks
 
     # fallback: GraphQL
@@ -617,94 +643,280 @@ def distribute(task_hours, wdays, filled_hours, daily_limit=8.0):
     return entries, remaining
 
 
-# ─── 任务状态修改（未开始 → 进行中） ───────────────────────────────────────────
+# ─── 评论 HTML 构造 ──────────────────────────────────────────────────────────
 
-_START_TASK_QUERY = """
-    mutation StartTask {
-      updateIssue (uuid: $uuid status: $status) {
-        uuid
+def _make_comment_html(text):
+    """
+    构建 ONES 评论字段所需的 HTML 值。
+    格式参考浏览器实际请求：ones-editor-doc JSON base64 + ones-editor-text base64。
+    """
+    import base64, random, string
+    block_id = "".join(random.choices(string.ascii_letters + string.digits, k=8))
+    doc = {
+        "blocks": {"root": [{"id": block_id, "type": "text", "text": [{"insert": text}]}]},
+        "meta": {},
+        "comments": {},
+    }
+    doc_b64  = base64.b64encode(json.dumps(doc, ensure_ascii=False, separators=(",", ":"))
+                                .encode("utf-8")).decode("ascii")
+    text_b64 = base64.b64encode(text.encode("utf-8")).decode("ascii")
+    return (
+        f'<!doctype html><html><head><meta charset="utf-8">'
+        f'<ones-editor-doc data-source="ones-editor-doc::{doc_b64}::ones-editor-doc">'
+        f'</ones-editor-doc>'
+        f'<meta name="ones-editor-text" content="{text_b64}" />'
+        f'</head><body><p>    </p></body></html>'
+    )
+
+
+# ─── 工作流配置解析 ──────────────────────────────────────────────────────────
+
+def _parse_workflow(cfg):
+    """
+    从 config.json 的 workflow 字段解析状态流转配置。
+
+    workflow 格式（按工作项类型分组的对象）：
+      {
+        "任务": [
+          {"status": "未开始", "button": "开始任务"},
+          {"status": "进行中", "button": "完成任务"},
+          {"status": "已完成"}
+        ],
+        "工作任务": [
+          {"status": "未开始",     "button": "开始任务"},
+          {"status": "进行中",     "button": "完成审核中", "comment": "已经完成啦"},
+          {"status": "完成审核中", "button": "已完成"},
+          {"status": "已完成"}
+        ]
       }
-    }
-"""
+      - key    : 工作项类型名（与 ONES 中显示的一致）
+      - status : 任务当前状态名，用于过滤目标任务
+      - button : ONES 流转按钮名，用于从 transitions 中精确匹配
+      - comment: 可选，执行该流转时附加的评论
 
-_STATUS_CACHE = {}   # {task_uuid: {category: [{"uuid":..,"name":..}]}}
-
-def _fetch_statuses(cfg, team_uuid, task_uuid, debug=False):
-    """查询任务所在工作流的全部状态，按 category 分组并缓存"""
-    if task_uuid in _STATUS_CACHE:
-        return _STATUS_CACHE[task_uuid]
-    q = '{ task(uuid:"%s") { issueType { statuses { uuid name category } } } }' % task_uuid
-    data = _gql(cfg, team_uuid, q, debug=debug)
-    grouped = {}
-    if data:
-        for s in ((data.get("task") or {}).get("issueType", {}).get("statuses", [])):
-            grouped.setdefault(s["category"], []).append(
-                {"uuid": s["uuid"], "name": s["name"]}
-            )
-    _STATUS_CACHE[task_uuid] = grouped
-    return grouped
-
-
-def _pick_status(cfg, team_uuid, task_uuid, category, name_hint="", last=False, debug=False):
+    返回 {类型名: [step_dict, ...]}，每个 step_dict：
+      {"from_status": str, "to_status": str, "button": str, "comment": str}
     """
-    从工作流中选一个状态 UUID：
-    - 优先按 name_hint 模糊匹配
-    - last=True 取该分类最后一个（如"待审核"通常在 in_progress 末尾）
-    - 否则取该分类第一个
-    """
-    grouped = _fetch_statuses(cfg, team_uuid, task_uuid, debug)
-    statuses = grouped.get(category, [])
-    if not statuses:
-        return None, None
-    if name_hint:
-        for s in statuses:
-            if name_hint in s["name"]:
-                return s["uuid"], s["name"]
-    chosen = statuses[-1] if last else statuses[0]
-    return chosen["uuid"], chosen["name"]
-
-
-def update_task_status(cfg, team_uuid, task_uuid, status_uuid, debug=False):
-    """更新任务状态，返回 (success, response_uuid)"""
-    url  = f"{BASE_URL}{GRAPHQL_PATH.format(team=team_uuid)}?t=UpdateIssueStatus"
-    body = {
-        "query": _START_TASK_QUERY,
-        "variables": {"uuid": task_uuid, "status": status_uuid},
+    default_raw = {
+        "任务": [
+            {"status": "未开始", "button": "开始任务"},
+            {"status": "进行中", "button": "完成任务"},
+            {"status": "已完成"},
+        ],
+        "工作任务": [
+            {"status": "未开始",     "button": "开始任务"},
+            {"status": "进行中",     "button": "完成审核中", "comment": "已经完成啦"},
+            {"status": "完成审核中", "button": "已完成"},
+            {"status": "已完成"},
+        ],
     }
+    raw = cfg.get("workflow")
+    if not isinstance(raw, dict):
+        raw = default_raw
+
+    global_comment = cfg.get("transition_comment", "")
+    result = {}
+    for type_name, raw_steps in raw.items():
+        if not isinstance(raw_steps, list) or len(raw_steps) < 2:
+            continue
+        steps = []
+        for i in range(len(raw_steps) - 1):
+            cur = raw_steps[i]
+            nxt = raw_steps[i + 1]
+            if not isinstance(cur, dict) or not isinstance(nxt, dict):
+                continue
+            button = cur.get("button", "")
+            if not button:
+                continue
+            steps.append({
+                "from_status": cur.get("status", ""),
+                "to_status":   nxt.get("status", ""),
+                "button":      button,
+                "comment":     cur.get("comment", global_comment),
+            })
+        if steps:
+            result[type_name] = steps
+    return result
+
+
+def _find_step(cfg, task):
+    """
+    根据任务的工作项类型和当前状态名，从 workflow 配置中找到匹配的流转步骤。
+    先按类型精确匹配，找不到则用第一个定义的类型作为兜底。
+    返回 step_dict 或 None。
+    """
+    wf = _parse_workflow(cfg)
+    if not wf:
+        return None
+    issue_type  = task.get("_issue_type", "")
+    status_name = task.get("_status_name", "")
+    steps = wf.get(issue_type) or next(iter(wf.values()))
+    for step in steps:
+        if step["from_status"] and step["from_status"] in status_name:
+            return step
+    return None
+
+
+def _is_last_step(cfg, task):
+    """
+    判断当前任务的流转步骤是否为该类型 workflow 的最后一步（即下一步就是终态）。
+    工作项类型未知时返回 False，避免误判。
+    """
+    if not task.get("_issue_type"):
+        return False
+    wf = _parse_workflow(cfg)
+    if not wf:
+        return False
+    issue_type = task.get("_issue_type", "")
+    steps = wf.get(issue_type)
+    if not steps:
+        return False
+    step = _find_step(cfg, task)
+    return step is not None and step == steps[-1]
+
+
+def _eligible_for_update(task, year, month, extra_submitted_hours=0):
+    """
+    三条过滤规则，阶段2和阶段3共用：
+    1. 工时未填满（estimated > 0 且 actual + extra < estimated）→ False
+    2. 计划结束时间超过本月末 → False
+    3. 计划结束时间早于今天（已过期）→ False
+    """
+    today      = datetime.date.today()
+    month_last = datetime.date(year, month, calendar.monthrange(year, month)[1])
+
+    pe = (task.get("_plan_end") or "")[:10]
+    if pe:
+        try:
+            end_date = datetime.date.fromisoformat(pe)
+            if end_date > month_last:
+                return False
+            if end_date < today:
+                return False
+        except ValueError:
+            pass
+
+    est = task.get("_estimated", 0.0)
+    if est > 0:
+        act = task.get("_actual", 0.0) + extra_submitted_hours
+        if act < est - 0.1:
+            return False
+    return True
+
+
+# ─── 任务状态修改（通过 v2/transitions REST API）───────────────────────────────
+
+_TRANSITIONS_CACHE = {}  # {task_uuid: [transition_dict]}
+
+
+def _fetch_transitions(cfg, team_uuid, task_uuid, debug=False):
+    """
+    GET {OQL_BASE}/team/{team}/issue/{task_uuid}/v2/transitions
+    返回该任务当前可用的流转列表（含 uuid、name、end_status_uuid）。
+    """
+    if task_uuid in _TRANSITIONS_CACHE:
+        return _TRANSITIONS_CACHE[task_uuid]
+    url = f"{OQL_BASE}/team/{team_uuid}/issue/{task_uuid}/v2/transitions"
+    code, data = _request(cfg, "GET", url, debug=debug)
+    transitions = []
+    if code == 200:
+        if isinstance(data, list):
+            transitions = data
+        elif isinstance(data.get("transitions"), list):
+            transitions = data["transitions"]
+        elif isinstance(data.get("data"), list):
+            transitions = data["data"]
+    _TRANSITIONS_CACHE[task_uuid] = transitions
+    return transitions
+
+
+def _pick_transition(transitions, button_hint="", to_category="",
+                     known_statuses=None, last=False):
+    """
+    从可用流转中挑选目标流转：
+    1. 按 button_hint 精确匹配流转按钮名（transition.name）
+    2. 按 to_category 匹配目标状态分类（需要 known_statuses 映射）
+    都匹配不上则返回 None（不猜测，由调用方跳过该任务）。
+    """
+    if not transitions:
+        return None
+    known_cat = known_statuses or {}
+
+    if button_hint:
+        matches = [tr for tr in transitions if button_hint in (tr.get("name") or "")]
+        if matches:
+            return matches[-1] if last else matches[0]
+
+    if to_category:
+        matches = [tr for tr in transitions
+                   if known_cat.get(tr.get("end_status_uuid", "")) == to_category]
+        if matches:
+            return matches[-1] if last else matches[0]
+
+    return None
+
+
+def _execute_transition(cfg, team_uuid, task_uuid, transition_uuid, comment="", debug=False):
+    """
+    POST {BASE_URL}/team/{team}/task/{task_uuid}/new_transit
+    body: {"transition_uuid": "...", "field_values": [...]}
+    执行状态流转，返回 (ok, error_reason)。
+    comment 不为空时写入 field057（评论字段，required=false）。
+    """
+    url = f"{BASE_URL}/team/{team_uuid}/task/{task_uuid}/new_transit"
+    field_values = []
+    if comment:
+        field_values = [{"field_uuid": "field057", "value": _make_comment_html(comment)}]
+    body = {"transition_uuid": transition_uuid, "field_values": field_values}
     code, data = _request(cfg, "POST", url, body, debug=debug)
-    ok = code == 200 and "errors" not in str(data)
-    return ok
+    if code in (200, 204):
+        errs = data.get("errors") if isinstance(data, dict) else None
+        if not errs:
+            return True, ""
+        return False, str((errs[0] or {}).get("message", errs[0]))[:80]
+    reason = ""
+    if isinstance(data, dict):
+        reason = data.get("desc") or data.get("errcode") or f"HTTP {code}"
+    else:
+        reason = f"HTTP {code}"
+    return False, str(reason)[:80]
 
 
 def batch_status_update(cfg, team_uuid, tasks, from_category, to_category,
-                        to_name_hint="", last=False,
                         prompt_label="", debug=False):
     """
-    批量询问并更新一组任务的状态。
-    prompt_label: 显示在确认提示中的描述，如"进行中 → 完成审核中"
+    批量询问并更新一组任务的状态（通过 v2/transitions REST API）。
+    每个任务根据其工作项类型和当前状态名，从 workflow 配置中找到对应的流转按钮。
     返回实际更新的任务列表。
     """
-    targets = [t for t in tasks if t.get("_category") == from_category]
+    # 只处理分类匹配、且 workflow 中有对应步骤的任务
+    targets = [t for t in tasks
+               if t.get("_category") == from_category
+               and _find_step(cfg, t) is not None]
     if not targets:
         return []
 
     _cn = _CAT_CN.get
-    label = prompt_label or f"{_cn(from_category, from_category)} → {to_name_hint or _cn(to_category, to_category)}"
+    label = prompt_label or f"{_cn(from_category, from_category)} → {_cn(to_category, to_category)}"
     print(f"\n有 {len(targets)} 个任务可更新状态（{label}）：")
     PW, NW = 16, 22
-    print(f"  {'项目':<{PW}}  {'任务':<{NW}}  {'状态':<8}  "
+    print(f"  {'项目':<{PW}}  {'任务':<{NW}}  {'状态':<8}  {'类型':<8}  "
           f"{'计划开始':>10}  {'计划结束':>10}  {'已填/预估':>10}")
-    print(f"  {'─'*PW}  {'─'*NW}  {'─'*8}  {'─'*10}  {'─'*10}  {'─'*10}")
+    print(f"  {'─'*PW}  {'─'*NW}  {'─'*8}  {'─'*8}  {'─'*10}  {'─'*10}  {'─'*10}")
     for t in targets:
         pname  = (t.get("_proj") or "")[:PW]
         tname  = (t.get("summary") or "")[:NW]
         sname  = (t.get("_status_name") or "")[:8]
+        itype  = (t.get("_issue_type") or "")[:8]
         ps     = (t.get("_plan_start") or "")[:10] or "—"
         pe     = (t.get("_plan_end")   or "")[:10] or "—"
         actual = t.get("_actual", 0.0)
         est    = t.get("_estimated", 0.0)
         hours  = f"{actual:.0f}h/{est:.0f}h" if est > 0 else f"{actual:.0f}h/—"
-        print(f"  {pname:<{PW}}  {tname:<{NW}}  {sname:<8}  {ps:>10}  {pe:>10}  {hours:>10}")
+        step   = _find_step(cfg, t)
+        arrow  = f"→ {step['to_status']}" if step else ""
+        print(f"  {pname:<{PW}}  {tname:<{NW}}  {sname:<8}  {itype:<8}  "
+              f"{ps:>10}  {pe:>10}  {hours:>10}  {arrow}")
 
     raw = input(f"确认更新？[Y/n]: ").strip().lower()
     if raw in ("n", "no"):
@@ -713,19 +925,25 @@ def batch_status_update(cfg, team_uuid, tasks, from_category, to_category,
 
     updated = []
     for t in targets:
-        status_uuid, sname = _pick_status(
-            cfg, team_uuid, t["uuid"], to_category,
-            name_hint=to_name_hint, last=last, debug=debug
-        )
-        if not status_uuid:
-            print(f"  — {_fmt_task(t)[:48]}  （找不到目标状态）")
+        step = _find_step(cfg, t)
+        if not step:
             continue
-        ok = update_task_status(cfg, team_uuid, t["uuid"], status_uuid, debug)
+        transitions = _fetch_transitions(cfg, team_uuid, t["uuid"], debug=debug)
+        if not transitions:
+            print(f"  — {_fmt_task(t)[:48]}  （无可用流转，或 API 失败）")
+            continue
+        tr = _pick_transition(transitions, button_hint=step["button"])
+        if not tr:
+            print(f"  — {_fmt_task(t)[:48]}  （找不到按钮 '{step['button']}'）")
+            continue
+        ok, reason = _execute_transition(cfg, team_uuid, t["uuid"], tr["uuid"],
+                                         comment=step["comment"], debug=debug)
         mark = "✓" if ok else "✗"
-        print(f"  {mark} {_fmt_task(t)[:48]}  → {sname}")
+        tail = f"  ({reason})" if reason else ""
+        print(f"  {mark} {_fmt_task(t)[:48]}  → {step['to_status']}{tail}")
         if ok:
             t["_category"]    = to_category
-            t["_status_name"] = sname
+            t["_status_name"] = step["to_status"]
             updated.append(t)
     return updated
 
@@ -983,75 +1201,92 @@ def main():
                     daily_limit=8.0 + overtime_daily,
                 )
 
+    api_entries = []
+    ok_cnt      = 0
+
     if not task_hours and not overtime_hours:
-        print("\n未输入工时，退出")
-        sys.exit(0)
+        print("\n未输入工时，跳过提交")
+    else:
+        all_entries = entries + overtime_entries
+        ot_planned  = sum(v["hours"] for v in overtime_hours.values())
 
-    all_entries = entries + overtime_entries
-    ot_planned  = sum(v["hours"] for v in overtime_hours.values())
+        # ── 分配预览 ──────────────────────────────────────────────
+        print_plan(all_entries, filled_hours, wdays,
+                   new_planned + ot_planned, capacity,
+                   overtime_hours=ot_planned)
 
-    # ── 分配预览 ────────────────────────────────────────────────
-    print_plan(all_entries, filled_hours, wdays,
-               new_planned + ot_planned, capacity,
-               overtime_hours=ot_planned)
+        if args.dry_run:
+            print("\n预览模式，不提交")
+            return
 
-    if args.dry_run:
-        print("\n预览模式，不提交")
+        manual_keys = ({k for k in task_hours if k.startswith("manual_")} |
+                       {k for k in overtime_hours if k.startswith("manual_")})
+        api_entries = [e for e in all_entries if e["task_uuid"] not in manual_keys]
+
+        if not api_entries:
+            print("\n（手动任务不提交到 ONES，仅供本地规划）")
+        else:
+            # ── 确认提交（默认 yes）────────────────────────────────
+            ot_note = f" + {ot_planned:.1f}h 加班" if ot_planned > 0 else ""
+            print(f"\n共 {len(api_entries)} 条记录（{new_planned:.1f}h 正常{ot_note}）即将提交")
+            if input("确认提交？[Y/n]: ").strip().lower() in ("n", "no"):
+                print("已取消")
+                api_entries = []
+            else:
+                # ── 提交工时 ──────────────────────────────────────
+                print()
+                fail_cnt = 0
+                for e in api_entries:
+                    ot_tag  = " [加班]" if e.get("is_overtime") else ""
+                    success, msg = submit_entry(cfg, team_uuid, e, debug=args.debug)
+                    mark = "✓" if success else "✗"
+                    tail = f"  {msg}" if msg and not success else ""
+                    print(f"  {mark} {e['date']}  {e['hours']:4.1f}h{ot_tag}  {e['task_name'][:40]}{tail}")
+                    if success: ok_cnt += 1
+                    else:       fail_cnt += 1
+                print(f"\n提交完成：成功 {ok_cnt} 条，失败 {fail_cnt} 条")
+
+    if args.manual:
         return
 
-    manual_keys = ({k for k in task_hours if k.startswith("manual_")} |
-                   {k for k in overtime_hours if k.startswith("manual_")})
-    api_entries = [e for e in all_entries if e["task_uuid"] not in manual_keys]
-
-    if not api_entries:
-        print("\n（手动任务不提交到 ONES，仅供本地规划）")
-        return
-
-    # ── 确认提交（默认 yes）──────────────────────────────────────
-    ot_note = f" + {ot_planned:.1f}h 加班" if ot_planned > 0 else ""
-    print(f"\n共 {len(api_entries)} 条记录（{new_planned:.1f}h 正常{ot_note}）即将提交")
-    if input("确认提交？[Y/n]: ").strip().lower() in ("n", "no"):
-        print("已取消")
-        return
-
-    # ── 提交工时 ────────────────────────────────────────────────
-    print()
-    ok_cnt = fail_cnt = 0
+    # ── 阶段2：进行中任务（非最后一步）询问是否更新状态 ──────────────
+    # 有提交工时时只针对刚提交的任务；没有提交工时时针对全部进行中任务
+    submitted_by_task: dict = {}
     for e in api_entries:
-        ot_tag  = " [加班]" if e.get("is_overtime") else ""
-        success, msg = submit_entry(cfg, team_uuid, e, debug=args.debug)
-        mark = "✓" if success else "✗"
-        tail = f"  {msg}" if msg and not success else ""
-        print(f"  {mark} {e['date']}  {e['hours']:4.1f}h{ot_tag}  {e['task_name'][:40]}{tail}")
-        if success: ok_cnt += 1
-        else:       fail_cnt += 1
+        submitted_by_task[e["task_uuid"]] = submitted_by_task.get(e["task_uuid"], 0.0) + e["hours"]
 
-    print(f"\n提交完成：成功 {ok_cnt} 条，失败 {fail_cnt} 条")
+    def _is_stage2_candidate(t):
+        # 阶段2只处理"进行中"状态（不处理完成审核中等中间状态，那是阶段3的范畴）
+        return ("进行中" in (t.get("_status_name") or "")
+                and t.get("_category") == "in_progress"
+                and _find_step(cfg, t) is not None
+                and _eligible_for_update(t, year, month,
+                                         submitted_by_task.get(t.get("uuid", ""), 0.0)))
 
-    if ok_cnt == 0 or args.manual:
-        return
-
-    # ── 阶段2：填完工时后，进行中任务询问是否更新为完成审核 ────────
-    filled_uuids = {e["task_uuid"] for e in api_entries}
-    inprog_filled = [t for t in tasks
-                     if t.get("_category") == "in_progress"
-                     and t["uuid"] in filled_uuids]
+    if api_entries and ok_cnt > 0:
+        filled_uuids  = {e["task_uuid"] for e in api_entries}
+        inprog_filled = [t for t in tasks
+                         if _is_stage2_candidate(t) and t["uuid"] in filled_uuids]
+    else:
+        inprog_filled = [t for t in tasks if _is_stage2_candidate(t)]
     if inprog_filled:
         batch_status_update(
             cfg, team_uuid, inprog_filled,
             from_category="in_progress", to_category="in_progress",
-            to_name_hint="审核", last=True,
-            prompt_label="进行中 → 完成审核中",
+            prompt_label="进行中 → 提交审核",
             debug=args.debug,
         )
 
     # ── 最终状态展示 ──────────────────────────────────────────────
-    _print_final_status(cfg, team_uuid, year, month, wdays, capacity, tasks, args.debug)
+    _print_final_status(cfg, team_uuid, year, month, wdays, capacity, tasks, args.debug,
+                        new_entries=api_entries, initial_total=total_filled)
 
 
-def _print_final_status(cfg, team_uuid, year, month, wdays, capacity, tasks, debug):
+def _print_final_status(cfg, team_uuid, year, month, wdays, capacity, tasks, debug,
+                        new_entries=None, initial_total=0):
     """刷新并展示当月工时状态，询问完成审核中 → 已完成"""
     print("\n正在刷新工时状态...", end="", flush=True)
+    time.sleep(1)   # 等待服务器处理刚提交的工时
     result = fetch_filled_hours(cfg, team_uuid, year, month, debug=debug)
     if result is None:
         print(" 查询失败")
@@ -1059,6 +1294,17 @@ def _print_final_status(cfg, team_uuid, year, month, wdays, capacity, tasks, deb
 
     by_task      = result.get("_by_task", {})
     total_filled = sum(h for k, h in result.items() if k != "_by_task")
+
+    # 若服务器尚未同步刚提交的工时，用本地已知数据补全
+    if new_entries:
+        submitted_total = sum(e["hours"] for e in new_entries)
+        if total_filled < initial_total + submitted_total - 0.1:
+            for e in new_entries:
+                by_task[e["task_uuid"]] = by_task.get(e["task_uuid"], 0.0) + e["hours"]
+                d = e["date"]
+                result[d] = result.get(d, 0.0) + e["hours"]
+            total_filled = initial_total + submitted_total
+            result["_by_task"] = by_task
     gap          = capacity - total_filled
     filled_days  = sum(1 for d in wdays if result.get(d, 0.0) >= 8.0 - 0.01)
     print(f" 已填 {total_filled:.1f}h\n")
@@ -1105,18 +1351,18 @@ def _print_final_status(cfg, team_uuid, year, month, wdays, capacity, tasks, deb
         print(f"  ✓ 已填满")
     print("=" * 72)
 
-    # ── 阶段3：完成审核中 → 已完成 ──────────────────────────────
+    # ── 阶段3：已过了"进行中"的中间状态（如完成审核中 → 已完成）─────────
+    # 只处理不在"进行中"的 in_progress 任务（阶段2已处理"进行中"）
     review_tasks = [t for t in tasks
-                    if "审核" in (t.get("_status_name") or "")
-                    or t.get("_category") == "done"]
-    # 实际上 "完成审核中" 仍在 in_progress category，通过名字匹配
-    review_tasks = [t for t in tasks
-                    if "审核" in (t.get("_status_name") or "")]
+                    if t.get("_category") == "in_progress"
+                    and "进行中" not in (t.get("_status_name") or "")
+                    and _find_step(cfg, t) is not None
+                    and _eligible_for_update(t, year, month)]
     if review_tasks:
         batch_status_update(
             cfg, team_uuid, review_tasks,
             from_category="in_progress", to_category="done",
-            prompt_label="完成审核中 → 已完成",
+            prompt_label="提交审核 → 已完成",
             debug=debug,
         )
 
