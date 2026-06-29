@@ -990,7 +990,7 @@ def print_plan(entries, filled_hours, wdays, new_planned, capacity, overtime_hou
     gap          = capacity - total_after
 
     print("\n" + "=" * 72)
-    print(f"  {'日期':<12} {'星期':<4}  {'已填':>5}  {'新增':>5}  {'合计':>5}  {'状态'}")
+    print(f"  {_ljust('日期',12)} {_ljust('星期',4)}  {_rjust('已填',5)}  {_rjust('新增',5)}  {_rjust('合计',5)}  {'状态'}")
     print("-" * 72)
 
     for d in wdays:
@@ -1016,7 +1016,7 @@ def print_plan(entries, filled_hours, wdays, new_planned, capacity, overtime_hou
         else:
             status = "—"
 
-        print(f"  {str(d):<12} {wd_str:<4}  {already:>4.1f}h  {adding:>4.1f}h  "
+        print(f"  {_ljust(str(d),12)} {_ljust(wd_str,4)}  {already:>4.1f}h  {adding:>4.1f}h  "
               f"{total:>4.1f}h  {bar}  {status}")
 
     normal_new = new_planned - overtime_hours
