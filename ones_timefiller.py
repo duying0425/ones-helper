@@ -775,6 +775,22 @@ def _is_last_step(cfg, task):
     return step is not None and step == steps[-1]
 
 
+def _eligible_for_month_full_close(task, year, month):
+    """月度已满时的补充检查：任务当月结束且仍有剩余预估工时"""
+    today      = datetime.date.today()
+    month_last = datetime.date(year, month, calendar.monthrange(year, month)[1])
+    pe = (task.get("_plan_end") or "")[:10]
+    if not pe:
+        return False
+    try:
+        end_date = datetime.date.fromisoformat(pe)
+        if end_date > month_last or end_date < today:
+            return False
+    except ValueError:
+        return False
+    return task.get("_remaining", 0.0) > 0.1
+
+
 def _eligible_for_update(task, year, month, extra_submitted_hours=0):
     """
     三条过滤规则，阶段2和阶段3共用：
@@ -883,7 +899,7 @@ def _execute_transition(cfg, team_uuid, task_uuid, transition_uuid, comment="", 
 
 
 def batch_status_update(cfg, team_uuid, tasks, from_category, to_category,
-                        prompt_label="", debug=False):
+                        prompt_label="", default_yes=True, debug=False):
     """
     批量询问并更新一组任务的状态（通过 v2/transitions REST API）。
     每个任务根据其工作项类型和当前状态名，从 workflow 配置中找到对应的流转按钮。
@@ -918,8 +934,13 @@ def batch_status_update(cfg, team_uuid, tasks, from_category, to_category,
         print(f"  {_ljust(pname,PW)}  {_ljust(tname,NW)}  {_ljust(sname,8)}  {_ljust(itype,8)}  "
               f"{_rjust(ps,10)}  {_rjust(pe,10)}  {_rjust(hours,10)}  {arrow}")
 
-    raw = input(f"确认更新？[Y/n]: ").strip().lower()
-    if raw in ("n", "no"):
+    if default_yes:
+        raw = input("确认更新？[Y/n]: ").strip().lower()
+        skip = raw in ("n", "no")
+    else:
+        raw = input("确认更新？[y/N]: ").strip().lower()
+        skip = raw not in ("y", "yes")
+    if skip:
         print("  跳过状态更新")
         return []
 
@@ -1379,6 +1400,22 @@ def _print_final_status(cfg, team_uuid, year, month, wdays, capacity, tasks, deb
             prompt_label="提交审核 → 已完成",
             debug=debug,
         )
+
+    # 阶段2b：月度已满但任务仍有剩余工时且当月结束 → 询问是否提交审核（默认N）
+    if total_filled >= capacity - 0.01:
+        month_full_tasks = [t for t in tasks
+                            if t.get("_category") == "in_progress"
+                            and "进行中" in (t.get("_status_name") or "")
+                            and _find_step(cfg, t) is not None
+                            and _eligible_for_month_full_close(t, year, month)]
+        if month_full_tasks:
+            batch_status_update(
+                cfg, team_uuid, month_full_tasks,
+                from_category="in_progress", to_category="in_progress",
+                prompt_label="月度已满，当月结束（工时未填完）→ 提交审核",
+                default_yes=False,
+                debug=debug,
+            )
 
 
 if __name__ == "__main__":
