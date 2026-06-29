@@ -505,20 +505,20 @@ def input_hours(tasks, task_filled=None, capacity=0, total_filled=0, label=""):
     # ── 先列出所有任务 ──────────────────────────────────────────
     # 列宽常量
     PW, NW = 16, 26   # 项目名、任务名
-    print("\n" + "─" * 80)
-    hdr = f"  {'#':>3}  {_ljust('项目',PW)}  {_ljust('任务',NW)}  {_ljust('状态',8)}  {_rjust('剩余预计',6)}  {_rjust('本月已填',6)}"
+    print("\n" + "─" * 84)
+    hdr = f"  {'#':>4}  {_ljust('项目',PW)}  {_ljust('任务',NW)}  {_ljust('状态',10)}  {_rjust('剩余预计',8)}  {_rjust('本月已填',8)}"
     print(hdr)
-    print("─" * 80)
+    print("─" * 84)
     for i, t in enumerate(tasks):
-        pname    = (t.get("_proj") or "")[:PW]
-        tname    = (t.get("summary") or "")[:NW]
-        sname    = (t.get("_status_name") or "")[:8]
+        pname    = _truncate(t.get("_proj") or "", PW)
+        tname    = _truncate(t.get("summary") or "", NW)
+        sname    = _truncate(t.get("_status_name") or "", 10)
         task_rem = t.get("_remaining", 0.0)
         filed    = tf.get(t.get("uuid", ""), 0.0)
-        rem_s    = f"{task_rem:.0f}h" if task_rem > 0 else "—"
-        fil_s    = f"{filed:.1f}h"    if filed    > 0 else "—"
-        print(f"  [{i+1:2d}]  {_ljust(pname,PW)}  {_ljust(tname,NW)}  {_ljust(sname,8)}  {_rjust(rem_s,6)}  {_rjust(fil_s,6)}")
-    print("─" * 80)
+        rem_s    = f"{task_rem:.0f}h" if task_rem > 0 else "-"
+        fil_s    = f"{filed:.1f}h"    if filed    > 0 else "-"
+        print(f"  [{i+1:2d}]  {_ljust(pname,PW)}  {_ljust(tname,NW)}  {_ljust(sname,10)}  {_rjust(rem_s,8)}  {_rjust(fil_s,8)}")
+    print("─" * 84)
     _lbl = f"{label}工时" if label else "工时"
     avail_s = f"{month_remain:.1f}h" if month_remain > 0 else "已满"
     print(f"  {'可追加' if label else '月度剩余'}: {avail_s}  |  回车 = 任务剩余预计（不超上限）\n")
@@ -916,22 +916,22 @@ def batch_status_update(cfg, team_uuid, tasks, from_category, to_category,
     label = prompt_label or f"{_cn(from_category, from_category)} → {_cn(to_category, to_category)}"
     print(f"\n有 {len(targets)} 个任务可更新状态（{label}）：")
     PW, NW = 16, 22
-    print(f"  {_ljust('项目',PW)}  {_ljust('任务',NW)}  {_ljust('状态',8)}  {_ljust('类型',8)}  "
+    print(f"  {_ljust('项目',PW)}  {_ljust('任务',NW)}  {_ljust('状态',10)}  {_ljust('类型',8)}  "
           f"{_rjust('计划开始',10)}  {_rjust('计划结束',10)}  {_rjust('已填/预估',10)}")
-    print(f"  {'─'*PW}  {'─'*NW}  {'─'*8}  {'─'*8}  {'─'*10}  {'─'*10}  {'─'*10}")
+    print(f"  {'─'*PW}  {'─'*NW}  {'─'*10}  {'─'*8}  {'─'*10}  {'─'*10}  {'─'*10}")
     for t in targets:
-        pname  = (t.get("_proj") or "")[:PW]
-        tname  = (t.get("summary") or "")[:NW]
-        sname  = (t.get("_status_name") or "")[:8]
-        itype  = (t.get("_issue_type") or "")[:8]
-        ps     = (t.get("_plan_start") or "")[:10] or "—"
-        pe     = (t.get("_plan_end")   or "")[:10] or "—"
+        pname  = _truncate(t.get("_proj") or "", PW)
+        tname  = _truncate(t.get("summary") or "", NW)
+        sname  = _truncate(t.get("_status_name") or "", 10)
+        itype  = _truncate(t.get("_issue_type") or "", 8)
+        ps     = (t.get("_plan_start") or "")[:10] or "-"
+        pe     = (t.get("_plan_end")   or "")[:10] or "-"
         actual = t.get("_actual", 0.0)
         est    = t.get("_estimated", 0.0)
-        hours  = f"{actual:.0f}h/{est:.0f}h" if est > 0 else f"{actual:.0f}h/—"
+        hours  = f"{actual:.0f}h/{est:.0f}h" if est > 0 else f"{actual:.0f}h/-"
         step   = _find_step(cfg, t)
         arrow  = f"→ {step['to_status']}" if step else ""
-        print(f"  {_ljust(pname,PW)}  {_ljust(tname,NW)}  {_ljust(sname,8)}  {_ljust(itype,8)}  "
+        print(f"  {_ljust(pname,PW)}  {_ljust(tname,NW)}  {_ljust(sname,10)}  {_ljust(itype,8)}  "
               f"{_rjust(ps,10)}  {_rjust(pe,10)}  {_rjust(hours,10)}  {arrow}")
 
     if default_yes:
@@ -951,17 +951,17 @@ def batch_status_update(cfg, team_uuid, tasks, from_category, to_category,
             continue
         transitions = _fetch_transitions(cfg, team_uuid, t["uuid"], debug=debug)
         if not transitions:
-            print(f"  — {_fmt_task(t)[:48]}  （无可用流转，或 API 失败）")
+            print(f"  — {_fmt_task(t)}  （无可用流转，或 API 失败）")
             continue
         tr = _pick_transition(transitions, button_hint=step["button"])
         if not tr:
-            print(f"  — {_fmt_task(t)[:48]}  （找不到按钮 '{step['button']}'）")
+            print(f"  — {_fmt_task(t)}  （找不到按钮 '{step['button']}'）")
             continue
         ok, reason = _execute_transition(cfg, team_uuid, t["uuid"], tr["uuid"],
                                          comment=step["comment"], debug=debug)
         mark = "✓" if ok else "✗"
         tail = f"  ({reason})" if reason else ""
-        print(f"  {mark} {_fmt_task(t)[:48]}  → {step['to_status']}{tail}")
+        print(f"  {mark} {_fmt_task(t)}  → {step['to_status']}{tail}")
         if ok:
             t["_category"]    = to_category
             t["_status_name"] = step["to_status"]
@@ -970,10 +970,10 @@ def batch_status_update(cfg, team_uuid, tasks, from_category, to_category,
 
 
 def _fmt_task(t, pwidth=18, nwidth=24):
-    """固定宽度格式化：[项目名] 任务名"""
-    pname = (t.get("_proj") or "")[:pwidth]
-    name  = (t.get("summary") or t.get("_display") or "")[:nwidth]
-    return f"[{pname:<{pwidth}}] {name:<{nwidth}}"
+    """固定显示宽度格式化：[项目名] 任务名（中文按2格计）"""
+    pname = _truncate(t.get("_proj") or "", pwidth)
+    name  = _truncate(t.get("summary") or t.get("_display") or "", nwidth)
+    return f"[{_ljust(pname, pwidth)}] {_ljust(name, nwidth)}"
 
 
 import unicodedata as _ud
@@ -981,6 +981,17 @@ import unicodedata as _ud
 def _wcswidth(s):
     """字符串显示宽度（CJK 全角字符计2）"""
     return sum(2 if _ud.east_asian_width(c) in ('W', 'F') else 1 for c in s)
+
+def _truncate(s, w):
+    """按显示宽度截断到 w 格以内（避免中文内容撑破列宽）"""
+    out, width = '', 0
+    for c in s:
+        cw = 2 if _ud.east_asian_width(c) in ('W', 'F') else 1
+        if width + cw > w:
+            break
+        out += c
+        width += cw
+    return out
 
 def _ljust(s, w):
     return s + ' ' * max(0, w - _wcswidth(s))
@@ -1360,13 +1371,13 @@ def _print_final_status(cfg, team_uuid, year, month, wdays, capacity, tasks, deb
         uuid = t.get("uuid", "")
         if uuid not in by_task:
             continue   # 本月没有工时，不展示
-        pname    = (t.get("_proj") or "")[:PW]
-        tname    = (t.get("summary") or "")[:NW]
-        sname    = (t.get("_status_name") or "")[:10]
+        pname    = _truncate(t.get("_proj") or "", PW)
+        tname    = _truncate(t.get("summary") or "", NW)
+        sname    = _truncate(t.get("_status_name") or "", 10)
         filed    = by_task[uuid]
         task_rem = t.get("_remaining", 0.0)
         fil_s    = f"{filed:.1f}h"
-        rem_s    = f"{task_rem:.0f}h" if task_rem > 0 else "—"
+        rem_s    = f"{task_rem:.0f}h" if task_rem > 0 else "-"
         print(f"  {_ljust(pname,PW)}  {_ljust(tname,NW)}  {_ljust(sname,10)}  {_rjust(fil_s,8)}  {_rjust(rem_s,8)}")
         shown_uuids.add(uuid)
 
@@ -1374,8 +1385,8 @@ def _print_final_status(cfg, team_uuid, year, month, wdays, capacity, tasks, deb
     other_uuids = [u for u in by_task if u not in shown_uuids]
     if other_uuids:
         other_total = sum(by_task[u] for u in other_uuids)
-        label_w = PW + NW + 4
-        print(f"  {_ljust('其他任务（已完成等）', label_w)}  {other_total:>7.1f}h  {_rjust('—',8)}")
+        merged_w = PW + 2 + NW + 2 + 10   # 项目+任务+状态 三列合并
+        print(f"  {_ljust('其他任务（已完成等）', merged_w)}  {_rjust(f'{other_total:.1f}h', 8)}  {_rjust('-', 8)}")
         # 注：工时查询已按本月 startTime 过滤，跨月任务只统计本月部分
 
     print("-" * 72)
