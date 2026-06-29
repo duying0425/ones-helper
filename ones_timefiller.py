@@ -506,7 +506,7 @@ def input_hours(tasks, task_filled=None, capacity=0, total_filled=0, label=""):
     # 列宽常量
     PW, NW = 16, 26   # 项目名、任务名
     print("\n" + "─" * 80)
-    hdr = f"  {'#':>3}  {'项目':<{PW}}  {'任务':<{NW}}  {'状态':<8}  {'剩余预计':>6}  {'本月已填':>6}"
+    hdr = f"  {'#':>3}  {_ljust('项目',PW)}  {_ljust('任务',NW)}  {_ljust('状态',8)}  {_rjust('剩余预计',6)}  {_rjust('本月已填',6)}"
     print(hdr)
     print("─" * 80)
     for i, t in enumerate(tasks):
@@ -517,7 +517,7 @@ def input_hours(tasks, task_filled=None, capacity=0, total_filled=0, label=""):
         filed    = tf.get(t.get("uuid", ""), 0.0)
         rem_s    = f"{task_rem:.0f}h" if task_rem > 0 else "—"
         fil_s    = f"{filed:.1f}h"    if filed    > 0 else "—"
-        print(f"  [{i+1:2d}]  {pname:<{PW}}  {tname:<{NW}}  {sname:<8}  {rem_s:>6}  {fil_s:>6}")
+        print(f"  [{i+1:2d}]  {_ljust(pname,PW)}  {_ljust(tname,NW)}  {_ljust(sname,8)}  {_rjust(rem_s,6)}  {_rjust(fil_s,6)}")
     print("─" * 80)
     _lbl = f"{label}工时" if label else "工时"
     avail_s = f"{month_remain:.1f}h" if month_remain > 0 else "已满"
@@ -900,8 +900,8 @@ def batch_status_update(cfg, team_uuid, tasks, from_category, to_category,
     label = prompt_label or f"{_cn(from_category, from_category)} → {_cn(to_category, to_category)}"
     print(f"\n有 {len(targets)} 个任务可更新状态（{label}）：")
     PW, NW = 16, 22
-    print(f"  {'项目':<{PW}}  {'任务':<{NW}}  {'状态':<8}  {'类型':<8}  "
-          f"{'计划开始':>10}  {'计划结束':>10}  {'已填/预估':>10}")
+    print(f"  {_ljust('项目',PW)}  {_ljust('任务',NW)}  {_ljust('状态',8)}  {_ljust('类型',8)}  "
+          f"{_rjust('计划开始',10)}  {_rjust('计划结束',10)}  {_rjust('已填/预估',10)}")
     print(f"  {'─'*PW}  {'─'*NW}  {'─'*8}  {'─'*8}  {'─'*10}  {'─'*10}  {'─'*10}")
     for t in targets:
         pname  = (t.get("_proj") or "")[:PW]
@@ -915,8 +915,8 @@ def batch_status_update(cfg, team_uuid, tasks, from_category, to_category,
         hours  = f"{actual:.0f}h/{est:.0f}h" if est > 0 else f"{actual:.0f}h/—"
         step   = _find_step(cfg, t)
         arrow  = f"→ {step['to_status']}" if step else ""
-        print(f"  {pname:<{PW}}  {tname:<{NW}}  {sname:<8}  {itype:<8}  "
-              f"{ps:>10}  {pe:>10}  {hours:>10}  {arrow}")
+        print(f"  {_ljust(pname,PW)}  {_ljust(tname,NW)}  {_ljust(sname,8)}  {_ljust(itype,8)}  "
+              f"{_rjust(ps,10)}  {_rjust(pe,10)}  {_rjust(hours,10)}  {arrow}")
 
     raw = input(f"确认更新？[Y/n]: ").strip().lower()
     if raw in ("n", "no"):
@@ -953,6 +953,19 @@ def _fmt_task(t, pwidth=18, nwidth=24):
     pname = (t.get("_proj") or "")[:pwidth]
     name  = (t.get("summary") or t.get("_display") or "")[:nwidth]
     return f"[{pname:<{pwidth}}] {name:<{nwidth}}"
+
+
+import unicodedata as _ud
+
+def _wcswidth(s):
+    """字符串显示宽度（CJK 全角字符计2）"""
+    return sum(2 if _ud.east_asian_width(c) in ('W', 'F') else 1 for c in s)
+
+def _ljust(s, w):
+    return s + ' ' * max(0, w - _wcswidth(s))
+
+def _rjust(s, w):
+    return ' ' * max(0, w - _wcswidth(s)) + s
 
 
 # ─── 打印计划 ────────────────────────────────────────────────────────────────
@@ -1313,7 +1326,7 @@ def _print_final_status(cfg, team_uuid, year, month, wdays, capacity, tasks, deb
     print("=" * 72)
     print(f"  {year}年{month}月  工时汇总  ({filled_days}/{len(wdays)} 天已满)")
     print("-" * 72)
-    print(f"  {'项目':<{PW}}  {'任务':<{NW}}  {'状态':<10}  {'本月已填':>8}  {'任务剩余':>8}")
+    print(f"  {_ljust('项目',PW)}  {_ljust('任务',NW)}  {_ljust('状态',10)}  {_rjust('本月已填',8)}  {_rjust('任务剩余',8)}")
     print("-" * 72)
 
     # 以"本月有工时记录的任务"为基准，而不是遍历所有任务
@@ -1333,14 +1346,15 @@ def _print_final_status(cfg, team_uuid, year, month, wdays, capacity, tasks, deb
         task_rem = t.get("_remaining", 0.0)
         fil_s    = f"{filed:.1f}h"
         rem_s    = f"{task_rem:.0f}h" if task_rem > 0 else "—"
-        print(f"  {pname:<{PW}}  {tname:<{NW}}  {sname:<10}  {fil_s:>8}  {rem_s:>8}")
+        print(f"  {_ljust(pname,PW)}  {_ljust(tname,NW)}  {_ljust(sname,10)}  {_rjust(fil_s,8)}  {_rjust(rem_s,8)}")
         shown_uuids.add(uuid)
 
     # 2. by_task 里有但不在活跃任务里的（已完成任务或其他）
     other_uuids = [u for u in by_task if u not in shown_uuids]
     if other_uuids:
         other_total = sum(by_task[u] for u in other_uuids)
-        print(f"  {'其他任务（已完成等）':{PW+NW+4}}  {other_total:>7.1f}h  {'—':>8}")
+        label_w = PW + NW + 4
+        print(f"  {_ljust('其他任务（已完成等）', label_w)}  {other_total:>7.1f}h  {_rjust('—',8)}")
         # 注：工时查询已按本月 startTime 过滤，跨月任务只统计本月部分
 
     print("-" * 72)
