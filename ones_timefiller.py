@@ -314,6 +314,35 @@ def _gql(cfg, team_uuid, query, tag="", debug=False):
 _CAT_CN = {"to_do": "未开始", "in_progress": "进行中", "done": "已完成"}
 
 
+def _fetch_tasks_by_uuids(cfg, team_uuid, uuids, debug=False):
+    """
+    GraphQL 查询指定 UUID 列表的任务详情（名称、项目、状态）。
+    用于展示已完成任务的工时明细。
+    返回 {uuid: task_dict}。
+    """
+    if not uuids:
+        return {}
+    uuid_list = '","'.join(uuids)
+    q = ('{ tasks(filter:{uuid_in:["%s"]},limit:200)'
+         '{ uuid summary project { uuid name }'
+         '  status { uuid name category } } }') % uuid_list
+    gdata = _gql(cfg, team_uuid, q, debug=debug)
+    result = {}
+    for t in (gdata or {}).get("tasks") or []:
+        uuid  = t.get("uuid", "")
+        proj  = (t.get("project") or {}).get("name", "")
+        sinfo = t.get("status") or {}
+        result[uuid] = {
+            "uuid":         uuid,
+            "summary":      t.get("summary", ""),
+            "_proj":        proj,
+            "_status_name": sinfo.get("name", ""),
+            "_category":    sinfo.get("category", ""),
+            "_remaining":   0.0,
+        }
+    return result
+
+
 def _fetch_issue_types(cfg, team_uuid, tasks, debug=False):
     """
     GraphQL 查询补全 tasks 的 _issue_type 字段（工作项类型显示名称）。
@@ -1381,12 +1410,23 @@ def _print_final_status(cfg, team_uuid, year, month, wdays, capacity, tasks, deb
         print(f"  {_ljust(pname,PW)}  {_ljust(tname,NW)}  {_ljust(sname,10)}  {_rjust(fil_s,8)}  {_rjust(rem_s,8)}")
         shown_uuids.add(uuid)
 
-    # 2. by_task 里有但不在活跃任务里的（已完成任务或其他）
+    # 2. by_task 里有但不在活跃任务里的（已完成任务或其他），尝试逐条展示
     other_uuids = [u for u in by_task if u not in shown_uuids]
     if other_uuids:
-        other_total = sum(by_task[u] for u in other_uuids)
-        merged_w = PW + 2 + NW + 2 + 10   # 项目+任务+状态 三列合并
-        print(f"  {_ljust('其他任务（已完成等）', merged_w)}  {_rjust(f'{other_total:.1f}h', 8)}  {_rjust('-', 8)}")
+        done_map = _fetch_tasks_by_uuids(cfg, team_uuid, other_uuids, debug=debug)
+        for uuid in other_uuids:
+            filed = by_task[uuid]
+            info  = done_map.get(uuid)
+            if info:
+                pname = _truncate(info.get("_proj") or "", PW)
+                tname = _truncate(info.get("summary") or "", NW)
+                sname = _truncate(info.get("_status_name") or "已完成", 10)
+            else:
+                pname = ""
+                tname = _truncate(uuid, NW)
+                sname = "已完成"
+            fil_s = f"{filed:.1f}h"
+            print(f"  {_ljust(pname,PW)}  {_ljust(tname,NW)}  {_ljust(sname,10)}  {_rjust(fil_s,8)}  {_rjust('-',8)}")
         # 注：工时查询已按本月 startTime 过滤，跨月任务只统计本月部分
 
     print("-" * 72)
