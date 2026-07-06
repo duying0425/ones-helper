@@ -14,8 +14,14 @@
 
   "_optional": "以下为可选配置",
 
+  "italent_cookie": "粘贴 italent.cn 或 cloud.italent.cn 的 Cookie 字符串以自动抓取考勤系统加班时间",
+  "_italent_cookie说明": "可选，若不配置可通过在同级目录下放置 attendance.json 静态数据作为替代",
+
+  "italent_api_url": "https://cloud.italent.cn/api/v1/attendance/AttendanceStatistics/GetPageList",
+  "_italent_api_url说明": "可选，北森考勤接口 API 地址",
+
   "overtime_daily_max": 4,
-  "_overtime说明": "加班模式每天最多额外记录的小时数，默认 4h（即 8+4=12h/天上限）",
+  "_overtime说明": "默认加班模式下每天最多额外记录的小时数，默认 4h（即 8+4=12h/天上限）",
 
   "extra_holidays": {
     "_说明": "覆盖或补充内置节假日（2025官方已内置，2026为估算）",

@@ -1,0 +1,25 @@
+{
+  "code": "0",
+  "message": "Success",
+  "data": {
+    "totalCount": 6,
+    "pageList": [
+      {
+        "AttendanceStatistics.AttendanceDate": "2026-07-01",
+        "AttendanceStatistics.WorkDuration": 9.5
+      },
+      {
+        "AttendanceStatistics.AttendanceDate": "2026-07-02",
+        "AttendanceStatistics.WorkDuration": 10.4
+      },
+      {
+        "AttendanceStatistics.AttendanceDate": "2026-07-03",
+        "AttendanceStatistics.WorkDuration": 12.0
+      },
+      {
+        "AttendanceStatistics.AttendanceDate": "2026-07-06",
+        "AttendanceStatistics.WorkDuration": 8.5
+      }
+    ]
+  }
+}

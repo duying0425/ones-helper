@@ -519,6 +519,234 @@ def fetch_filled_hours(cfg, team_uuid, year, month, debug=False):
     return by_date
 
 
+# ─── 北森考勤数据获取与解析 ──────────────────────────────────────────────────
+
+def _find_key_by_pattern(obj, patterns, default=None):
+    """
+    递归遍历字典或列表，查找键名包含 patterns 之一的项。
+    用于模糊匹配 Beisen 复杂的 JSON 响应字段名。
+    """
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            for pat in patterns:
+                if pat.lower() in k.lower():
+                    return k
+        # 递归深入
+        for v in obj.values():
+            res = _find_key_by_pattern(v, patterns)
+            if res:
+                return res
+    elif isinstance(obj, list):
+        for item in obj:
+            res = _find_key_by_pattern(item, patterns)
+            if res:
+                return res
+    return default
+
+
+def _extract_page_list(data):
+    """
+    寻找 JSON 中的记录列表，通常在 pageList 或 data 中。
+    """
+    if not isinstance(data, dict):
+        return None
+    # 直属的
+    for k in ["pageList", "pagelist", "data", "records", "rows", "list"]:
+        if k in data and isinstance(data[k], list):
+            return data[k]
+    # 嵌套的
+    for k, v in data.items():
+        if isinstance(v, dict):
+            res = _extract_page_list(v)
+            if res is not None:
+                return res
+    return None
+
+
+def fetch_italent_attendance(cfg, year, month, debug=False):
+    """
+    获取北森考勤数据：
+    1. 优先读取本地的 attendance.json
+    2. 其次通过配置的 italent_cookie 请求北森 API，若未配置或失效则提供交互式粘贴提示
+    """
+    local_file = Path(__file__).parent / "attendance.json"
+    if local_file.exists():
+        if debug:
+            print(f"  [Italent] 发现本地 {local_file.name}，优先使用文件数据")
+        try:
+            with open(local_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"  [Italent] 读取本地 {local_file.name} 失败: {e}")
+
+    cookie = cfg.get("italent_cookie", "")
+    if not cookie:
+        print("\n提示: 未检测到本地考勤数据 (attendance.json) 且未配置 italent_cookie。")
+        print("如果想使用考勤系统加班数据，请提供 Cookie：")
+        print("  1. 浏览器访问 www.italent.cn 登录并进入考勤统计页面")
+        print("  2. F12 ➜ Network ➜ 找到任意接口 (如 GetPageList) ➜ 复制 Request Headers 中的 Cookie")
+        new_cookie = input("  粘贴 italent.cn Cookie (直接回车跳过): ").strip()
+        if new_cookie:
+            cookie = new_cookie
+            cfg["italent_cookie"] = cookie
+            if CONFIG_FILE.exists():
+                try:
+                    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                        raw = json.load(f)
+                    raw["italent_cookie"] = cookie
+                    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                        json.dump(raw, f, ensure_ascii=False, indent=2)
+                    print("  ✓ Cookie 已保存至 config.json\n")
+                except Exception as e:
+                    print(f"  ✗ 保存 config.json 失败: {e}\n")
+        else:
+            print("  跳过，不使用考勤加班策略\n")
+            return None
+
+    # Beisen appmodel query endpoint
+    url = cfg.get("italent_api_url", "https://cloud.italent.cn/api/v1/attendance/AttendanceStatistics/GetPageList")
+    
+    def _do_fetch(ck):
+        headers = {
+            "Cookie": ck,
+            "Content-Type": "application/json;charset=UTF-8",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        }
+        body = {
+            "metaObjName": "Attendance.AttendanceStatistics",
+            "viewName": "Attendance.AttendanceDataRecordNavView",
+            "pageIndex": 1,
+            "pageSize": 100,
+        }
+        if debug:
+            print(f"  [Italent] 正在请求北森接口: {url}")
+        req = urllib.request.Request(
+            url, data=json.dumps(body).encode("utf-8"), method="POST", headers=headers
+        )
+        with urllib.request.urlopen(req, context=_SSL_CTX, timeout=15) as resp:
+            raw = resp.read().decode("utf-8")
+            if debug:
+                print(f"  [Italent] 响应状态: {resp.status}，前200字符: {raw[:200]}")
+            return json.loads(raw)
+
+    try:
+        return _do_fetch(cookie)
+    except Exception as e:
+        if debug:
+            print(f"  [Italent] 请求失败: {e}")
+        print(f"\n⚠  请求考勤系统接口失败 ({e})，Cookie 可能已失效。")
+        print("如需更新，请复制最新 Cookie 并粘贴：")
+        new_cookie = input("  粘贴最新 italent.cn Cookie (直接回车跳过): ").strip()
+        if new_cookie:
+            cfg["italent_cookie"] = new_cookie
+            if CONFIG_FILE.exists():
+                try:
+                    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                        raw = json.load(f)
+                    raw["italent_cookie"] = new_cookie
+                    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                        json.dump(raw, f, ensure_ascii=False, indent=2)
+                    print("  ✓ Cookie 已更新并保存至 config.json\n")
+                except Exception:
+                    pass
+            try:
+                return _do_fetch(new_cookie)
+            except Exception as e2:
+                print(f"  ✗ 重新请求失败: {e2}")
+                return None
+        else:
+            print("  跳过，不使用考勤加班策略\n")
+            return None
+
+
+def parse_italent_attendance(data, year, month, debug=False):
+    """
+    解析北森考勤数据，计算加班时间。
+    返回 {date_obj: overtime_hours}。
+    """
+    records = _extract_page_list(data)
+    if not records:
+        if debug:
+            print("  [Italent] 未能在 JSON 中找到数据列表")
+        return {}
+
+    # 自动探测 Date 和 WorkDuration 的 Key
+    date_key = None
+    duration_key = None
+
+    # 从第一条记录中寻找 key
+    if records:
+        first = records[0]
+        # 寻找 Date key
+        date_key = _find_key_by_pattern(first, ["AttendanceDate", "date"])
+        # 寻找 WorkDuration key
+        duration_key = _find_key_by_pattern(first, ["WorkDuration", "Duration", "WorkHours", "workhours"])
+
+    if not date_key or not duration_key:
+        # 兜底猜测
+        if records and isinstance(records[0], dict):
+            for k in records[0].keys():
+                if not date_key and ("date" in k.lower() or "day" in k.lower()):
+                    date_key = k
+                if not duration_key and ("duration" in k.lower() or "hours" in k.lower() or "time" in k.lower() or "work" in k.lower()):
+                    duration_key = k
+        if not date_key: date_key = "AttendanceStatistics.AttendanceDate"
+        if not duration_key: duration_key = "AttendanceStatistics.WorkDuration"
+
+    if debug:
+        print(f"  [Italent] 探测到键名 - 日期: {date_key}, 时长: {duration_key}")
+
+    overtime_map = {}
+    for r in records:
+        if not isinstance(r, dict):
+            continue
+        d_val = r.get(date_key)
+        dur_val = r.get(duration_key)
+        if not d_val or dur_val is None:
+            continue
+
+        # 尝试解析日期，通常是 YYYY-MM-DD 或 YYYY-MM-DD HH:MM:SS
+        d_str = str(d_val)[:10]
+        try:
+            dt = datetime.date.fromisoformat(d_str)
+        except ValueError:
+            continue
+
+        # 只处理目标年份和月份
+        if dt.year != year or dt.month != month:
+            continue
+
+        # 解析时长
+        try:
+            work_duration = float(dur_val)
+        except (ValueError, TypeError):
+            continue
+
+        if work_duration <= 0.001:
+            continue
+
+        # 减去一小时（午休）作为工作时间
+        actual_work_hours = work_duration - 1.0
+        
+        # 如果超过8，四舍五入为整小时作为当天应填写的工时
+        if actual_work_hours > 8.0:
+            rounded_work_hours = int(actual_work_hours + 0.5)
+            # 再减去 8 就是加班工时
+            ot_hours = max(0, rounded_work_hours - 8)
+        else:
+            ot_hours = 0
+
+        if ot_hours > 0:
+            overtime_map[dt] = ot_hours
+
+    if debug:
+        print(f"  [Italent] 解析完成，本月考勤加班明细:")
+        for dt, ot in sorted(overtime_map.items()):
+            print(f"    {dt}: {ot}h")
+            
+    return overtime_map
+
+
 # ─── 交互输入 ────────────────────────────────────────────────────────────────
 
 def input_hours(tasks, task_filled=None, capacity=0, total_filled=0, label=""):
@@ -637,11 +865,15 @@ def _task_filled(filled_hours):
 
 def distribute(task_hours, wdays, filled_hours, daily_limit=8.0):
     """
-    daily_limit: 每天可填上限（正常=8h，加班模式=8+overtime_max）
+    daily_limit: 每天可填上限（正常=8h，加班模式=8+overtime_max，也可以是每天限制的字典 {date: limit_hours}）
     """
     remaining = {}
     for d in wdays:
-        avail = daily_limit - filled_hours.get(d, 0.0)
+        if isinstance(daily_limit, dict):
+            limit = daily_limit.get(d, 8.0)
+        else:
+            limit = daily_limit
+        avail = limit - filled_hours.get(d, 0.0)
         if avail > 0.001:
             remaining[d] = avail
 
@@ -1179,6 +1411,23 @@ def main():
     wdays    = working_days(year, month, cfg)
     capacity = len(wdays) * 8
 
+    # 查询考勤系统加班数据
+    attendance_ot = {}
+    use_attendance_strategy = False
+    if not args.manual:
+        print("正在获取考勤系统数据...", end="", flush=True)
+        italent_data = fetch_italent_attendance(cfg, year, month, debug=args.debug)
+        if italent_data:
+            attendance_ot = parse_italent_attendance(italent_data, year, month, debug=args.debug)
+            if attendance_ot:
+                use_attendance_strategy = True
+                total_ot_hours = sum(attendance_ot.values())
+                print(f" 成功 (读取到 {len(attendance_ot)} 天加班，共计 {total_ot_hours} 小时)")
+            else:
+                print(" 未找到加班数据")
+        else:
+            print(" 无法访问或未配置")
+
     # 查询本月已填工时
     filled_hours = {}
     fetch_ok     = False
@@ -1258,22 +1507,41 @@ def main():
         prefix = "\n月度容量已填满（{}h）".format(capacity) if new_planned > 0 else \
                  "\n月度容量已满（{}h），进入加班工时".format(capacity)
         print(prefix)
-        ans = input(f"追加加班工时？每天最多再加 {overtime_daily}h [y/N]: ").strip().lower()
-        if ans == "y":
-            print(f"\n── 加班工时 ─────────────────────────────────────")
-            print(f"叠加在每天 8h 之上，每天上限 {overtime_daily}h")
-            overtime_hours = input_hours(
-                tasks, task_filled=_task_filled(filled_hours),
-                capacity=len(wdays) * overtime_daily, total_filled=0,
-                label="加班",
-            )
-            if overtime_hours:
-                for v in overtime_hours.values():
-                    v["is_overtime"] = True
-                overtime_entries, _ = distribute(
-                    overtime_hours, wdays, filled_hours,
-                    daily_limit=8.0 + overtime_daily,
+        if use_attendance_strategy:
+            total_ot = sum(attendance_ot.values())
+            ans = input(f"追加加班工时？检测到考勤系统共计 {total_ot}h 加班 [Y/n]: ").strip().lower()
+            if ans not in ("n", "no"):
+                print(f"\n── 加班工时（考勤系统策略） ───────────────────────")
+                print(f"按考勤系统实际记录分配，本月共计 {total_ot}h")
+                overtime_hours = input_hours(
+                    tasks, task_filled=_task_filled(filled_hours),
+                    capacity=total_ot, total_filled=0,
+                    label="加班",
                 )
+                if overtime_hours:
+                    for v in overtime_hours.values():
+                        v["is_overtime"] = True
+                    overtime_entries, _ = distribute(
+                        overtime_hours, wdays, filled_hours,
+                        daily_limit={d: 8.0 + attendance_ot.get(d, 0) for d in wdays},
+                    )
+        else:
+            ans = input(f"追加加班工时？每天最多再加 {overtime_daily}h [y/N]: ").strip().lower()
+            if ans == "y":
+                print(f"\n── 加班工时 ─────────────────────────────────────")
+                print(f"叠加在每天 8h 之上，每天上限 {overtime_daily}h")
+                overtime_hours = input_hours(
+                    tasks, task_filled=_task_filled(filled_hours),
+                    capacity=len(wdays) * overtime_daily, total_filled=0,
+                    label="加班",
+                )
+                if overtime_hours:
+                    for v in overtime_hours.values():
+                        v["is_overtime"] = True
+                    overtime_entries, _ = distribute(
+                        overtime_hours, wdays, filled_hours,
+                        daily_limit=8.0 + overtime_daily,
+                    )
 
     api_entries = []
     ok_cnt      = 0
