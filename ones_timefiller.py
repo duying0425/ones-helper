@@ -96,18 +96,60 @@ def _try_refresh_token(cfg):
 
 def load_config():
     if not CONFIG_FILE.exists():
-        print("错误: 找不到 config.json")
-        print("\n请创建 config.json，内容如下（从浏览器 Cookie 里复制值）:")
-        print(json.dumps({
-            "user_id":    "ones-uid 的值（JWT 里的 org_user_uuid）",
-            "auth_token": "ones-lt cookie 的值",
-            "team_uuid":  "SpBJdKsD",
-            "session_id": "ones-ids-sid cookie 的值（用于自动刷新 token）",
-            "workflow":            ["未开始", "进行中", "完成审核中", "已完成"],
-            "transition_comment":  "已经完成啦",
-        }, ensure_ascii=False, indent=2))
+        print("\n⚠  找不到 config.json")
         print("\n获取方法: 浏览器 F12 → Application → Cookies → ones.reachauto.com")
-        sys.exit(1)
+        print("  需要: ones-lt (auth_token), ones-ids-sid (session_id)\n")
+        choice = input("是否现在交互式创建 config.json？(y/n): ").strip().lower()
+        if choice != "y":
+            print("\n请手动创建 config.json，参考 config.example.json")
+            sys.exit(1)
+
+        print("\n── 交互式创建 config.json ──\n")
+        auth_token  = input("  ones-lt (auth_token): ").strip()
+        session_id  = input("  ones-ids-sid (session_id): ").strip()
+        team_uuid   = input("  team_uuid [SpBJdKsD]: ").strip() or "SpBJdKsD"
+
+        # 从 JWT 中解析 user_id
+        user_id = ""
+        if auth_token:
+            try:
+                import base64
+                payload = auth_token.split(".")[1]
+                padded  = payload + "=" * (4 - len(payload) % 4)
+                data    = json.loads(base64.urlsafe_b64decode(padded))
+                user_id = data.get("org_user_uuid", data.get("user_uuid", ""))
+            except Exception:
+                pass
+        if not user_id:
+            user_id = input("  user_id (JWT 解析失败，请手动输入): ").strip()
+
+        if not auth_token or not user_id:
+            print("\n✗ auth_token 和 user_id 为必填项，无法创建配置文件")
+            sys.exit(1)
+
+        new_cfg = {
+            "user_id":    user_id,
+            "auth_token": auth_token,
+            "team_uuid":  team_uuid,
+            "session_id": session_id,
+            "workflow": {
+                "任务": [
+                    {"status": "未开始", "button": "开始任务"},
+                    {"status": "进行中", "button": "完成任务", "comment": "已经完成啦"},
+                    {"status": "已完成"}
+                ],
+                "工作任务": [
+                    {"status": "未开始",     "button": "开始任务"},
+                    {"status": "进行中",     "button": "完成审核中", "comment": "已经完成啦"},
+                    {"status": "完成审核中", "button": "已完成", "comment": "已经完成啦"},
+                    {"status": "已完成"}
+                ]
+            },
+        }
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(new_cfg, f, ensure_ascii=False, indent=2)
+        print(f"\n✓ 已创建 {CONFIG_FILE}\n")
+        return new_cfg
 
     with open(CONFIG_FILE, encoding="utf-8") as f:
         cfg = json.load(f)
