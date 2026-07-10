@@ -1,9 +1,9 @@
-# release.ps1 - 自动打包并发布到 GitHub Releases
-# 用法: .\release.ps1 [-Major] [-Minor] [-Patch]
-#   默认递增 Patch 版本号
-#   -Major  递增主版本号 (x.0.0)
-#   -Minor  递增次版本号 (0.x.0)
-#   -Patch  递增修订号 (0.0.x) [默认]
+# release.ps1 - Auto build and publish to GitHub Releases
+# Usage: .\release.ps1 [-Major] [-Minor] [-Patch]
+#   Default: increment Patch version
+#   -Major  increment major version (x.0.0)
+#   -Minor  increment minor version (0.x.0)
+#   -Patch  increment patch version (0.0.x) [default]
 
 param(
     [switch]$Major,
@@ -13,12 +13,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# ─── 1. 读取当前版本号 ────────────────────────────────────────────────────────
+# --- 1. Read current version ---
 $scriptFile = Join-Path $PSScriptRoot "ones_timefiller.py"
 $content = Get-Content $scriptFile -Raw -Encoding UTF8
 
 if ($content -notmatch '__version__\s*=\s*"(\d+)\.(\d+)\.(\d+)"') {
-    Write-Error "无法从 ones_timefiller.py 中解析版本号"
+    Write-Error "Cannot parse version from ones_timefiller.py"
     exit 1
 }
 
@@ -26,7 +26,7 @@ $currentMajor = [int]$Matches[1]
 $currentMinor = [int]$Matches[2]
 $currentPatch = [int]$Matches[3]
 
-# ─── 2. 计算新版本号 ──────────────────────────────────────────────────────────
+# --- 2. Calculate new version ---
 if ($Major) {
     $newMajor = $currentMajor + 1
     $newMinor = 0
@@ -38,7 +38,6 @@ elseif ($Minor) {
     $newPatch = 0
 }
 else {
-    # 默认 Patch
     $newMajor = $currentMajor
     $newMinor = $currentMinor
     $newPatch = $currentPatch + 1
@@ -47,29 +46,29 @@ else {
 $newVersion = "$newMajor.$newMinor.$newPatch"
 $tag = "v$newVersion"
 
-Write-Host "版本: $currentMajor.$currentMinor.$currentPatch -> $newVersion" -ForegroundColor Cyan
+Write-Host "Version: $currentMajor.$currentMinor.$currentPatch -> $newVersion" -ForegroundColor Cyan
 
-# ─── 3. 更新源码中的版本号 ────────────────────────────────────────────────────
+# --- 3. Update version in source ---
 $newContent = $content -replace (
     '__version__\s*=\s*"\d+\.\d+\.\d+"'
 ), (
     "__version__ = `"$newVersion`""
 )
 Set-Content $scriptFile -Value $newContent -Encoding UTF8NoBOM -NoNewline
-Write-Host "[OK] 已更新 ones_timefiller.py 中的版本号" -ForegroundColor Green
+Write-Host "[OK] Updated version in ones_timefiller.py" -ForegroundColor Green
 
-# ─── 4. PyInstaller 打包 ──────────────────────────────────────────────────────
-Write-Host "`n正在打包..." -ForegroundColor Yellow
+# --- 4. PyInstaller build ---
+Write-Host "`nBuilding..." -ForegroundColor Yellow
 Push-Location $PSScriptRoot
 try {
-    $iconArg = ""
+    $iconArg = @()
     $iconFile = Join-Path $PSScriptRoot "ones-icon.ico"
     if (Test-Path $iconFile) {
-        $iconArg = "--icon", $iconFile
+        $iconArg = @("--icon", $iconFile)
     }
     pyinstaller --onefile --name ones-timefiller --console --clean @iconArg ones_timefiller.py 2>&1 | ForEach-Object { Write-Host $_ }
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "PyInstaller 打包失败"
+        Write-Error "PyInstaller build failed"
         exit 1
     }
 }
@@ -79,44 +78,44 @@ finally {
 
 $exePath = Join-Path $PSScriptRoot "dist\ones-timefiller.exe"
 if (-not (Test-Path $exePath)) {
-    Write-Error "找不到打包产物: $exePath"
+    Write-Error "Build output not found: $exePath"
     exit 1
 }
 $exeSize = [math]::Round((Get-Item $exePath).Length / 1MB, 2)
-Write-Host "[OK] 打包完成: ones-timefiller.exe ($exeSize MB)" -ForegroundColor Green
+Write-Host "[OK] Build complete: ones-timefiller.exe ($exeSize MB)" -ForegroundColor Green
 
-# ─── 5. Git 提交 & 打 Tag ────────────────────────────────────────────────────
-Write-Host "`n提交代码并打 Tag..." -ForegroundColor Yellow
+# --- 5. Git commit & tag ---
+Write-Host "`nCommitting and tagging..." -ForegroundColor Yellow
 git add ones_timefiller.py
 git commit -m "release: v$newVersion"
 git tag $tag
-Write-Host "[OK] 已创建 Tag: $tag" -ForegroundColor Green
+Write-Host "[OK] Created tag: $tag" -ForegroundColor Green
 
-# ─── 6. 推送代码 & Tag ────────────────────────────────────────────────────────
-Write-Host "`n推送到远程..." -ForegroundColor Yellow
+# --- 6. Push ---
+Write-Host "`nPushing to remote..." -ForegroundColor Yellow
 git push origin main
 git push origin $tag
-Write-Host "[OK] 已推送" -ForegroundColor Green
+Write-Host "[OK] Pushed" -ForegroundColor Green
 
-# ─── 7. 用 gh 创建 Release ────────────────────────────────────────────────────
-Write-Host "`n创建 GitHub Release..." -ForegroundColor Yellow
+# --- 7. Create GitHub Release ---
+Write-Host "`nCreating GitHub Release..." -ForegroundColor Yellow
 $releaseNotes = @"
 ## ones-timefiller $tag
 
-### 下载
-- ``ones-timefiller.exe`` - Windows 可执行文件，无需安装 Python
+### Download
+- ``ones-timefiller.exe`` - Windows executable, no Python required
 
-### 使用方法
-1. 下载 ``ones-timefiller.exe``
-2. 在同目录下创建 ``config.json``（参考 ``config.example.json``）
-3. 双击运行或在终端中执行
+### Usage
+1. Download ``ones-timefiller.exe``
+2. Create ``config.json`` in the same directory (see ``config.example.json``)
+3. Double-click or run in terminal
 "@
 
 gh release create $tag $exePath --title "ones-timefiller $tag" --notes $releaseNotes
 
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "`n[OK] 发布成功! $tag" -ForegroundColor Green
+    Write-Host "`n[OK] Release published! $tag" -ForegroundColor Green
 } else {
-    Write-Error "gh release create 失败"
+    Write-Error "gh release create failed"
     exit 1
 }
