@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 """ONES 工时自动填写工具（无需第三方依赖）"""
 
+__version__ = "1.0.0"
+
 import sys, io
 if sys.stdout.encoding and sys.stdout.encoding.upper() not in ("UTF-8", "UTF8"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -20,7 +22,13 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-CONFIG_FILE  = Path(__file__).parent / "config.json"
+# PyInstaller --onefile 模式下 __file__ 指向临时目录，需用 sys.executable 定位
+if getattr(sys, 'frozen', False):
+    _APP_DIR = Path(sys.executable).parent
+else:
+    _APP_DIR = Path(__file__).parent
+
+CONFIG_FILE  = _APP_DIR / "config.json"
 BASE_URL     = "https://ones.reachauto.com/project/api/project"   # GraphQL 用
 OQL_BASE     = "https://ones.reachauto.com/project/api/ones-project"  # OQL 用
 GRAPHQL_PATH = "/team/{team}/items/graphql"
