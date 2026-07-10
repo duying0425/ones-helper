@@ -62,7 +62,12 @@ Write-Host "[OK] 已更新 ones_timefiller.py 中的版本号" -ForegroundColor 
 Write-Host "`n正在打包..." -ForegroundColor Yellow
 Push-Location $PSScriptRoot
 try {
-    pyinstaller --onefile --name ones-timefiller --console --clean ones_timefiller.py 2>&1 | ForEach-Object { Write-Host $_ }
+    $iconArg = ""
+    $iconFile = Join-Path $PSScriptRoot "ones-icon.ico"
+    if (Test-Path $iconFile) {
+        $iconArg = "--icon", $iconFile
+    }
+    pyinstaller --onefile --name ones-timefiller --console --clean @iconArg ones_timefiller.py 2>&1 | ForEach-Object { Write-Host $_ }
     if ($LASTEXITCODE -ne 0) {
         Write-Error "PyInstaller 打包失败"
         exit 1
