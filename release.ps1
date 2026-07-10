@@ -54,7 +54,7 @@ $newContent = $content -replace (
 ), (
     "__version__ = `"$newVersion`""
 )
-Set-Content $scriptFile -Value $newContent -Encoding UTF8NoBOM -NoNewline
+[System.IO.File]::WriteAllText($scriptFile, $newContent, [System.Text.UTF8Encoding]::new($false))
 Write-Host "[OK] Updated version in ones_timefiller.py" -ForegroundColor Green
 
 # --- 4. PyInstaller build ---
@@ -66,8 +66,9 @@ try {
     if (Test-Path $iconFile) {
         $iconArg = @("--icon", $iconFile)
     }
-    pyinstaller --onefile --name ones-timefiller --console --clean @iconArg ones_timefiller.py 2>&1 | ForEach-Object { Write-Host $_ }
-    if ($LASTEXITCODE -ne 0) {
+    $allArgs = @("--onefile", "--name", "ones-timefiller", "--console", "--clean") + $iconArg + @("ones_timefiller.py")
+    $proc = Start-Process -FilePath "pyinstaller" -ArgumentList $allArgs -NoNewWindow -Wait -PassThru
+    if ($proc.ExitCode -ne 0) {
         Write-Error "PyInstaller build failed"
         exit 1
     }
