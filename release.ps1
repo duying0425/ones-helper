@@ -13,6 +13,23 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# --- 0. Ensure python.exe is on PATH (PyInstaller internally calls `python`) ---
+if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    # 从 pyinstaller.exe 的位置反推 python 根目录
+    $pyiCmd = Get-Command pyinstaller -ErrorAction SilentlyContinue
+    if ($pyiCmd) {
+        $pythonRoot = Split-Path $pyiCmd.Source -Parent | Split-Path -Parent
+        if (Test-Path (Join-Path $pythonRoot "python.exe")) {
+            $env:PATH = "$pythonRoot;$env:PATH"
+            Write-Host "[INFO] Added python to PATH: $pythonRoot" -ForegroundColor DarkGray
+        }
+    }
+}
+if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    Write-Error "python.exe not found on PATH. Please install Python or add it to PATH."
+    exit 1
+}
+
 # --- 1. Read current version ---
 $scriptFile = Join-Path $PSScriptRoot "ones_timefiller.py"
 $content = Get-Content $scriptFile -Raw -Encoding UTF8
