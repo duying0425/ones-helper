@@ -1788,4 +1788,22 @@ def _print_final_status(cfg, team_uuid, year, month, wdays, capacity, tasks, deb
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        pass
+    except KeyboardInterrupt:
+        print("\n\n⏹ 用户中断")
+    except Exception:
+        import traceback
+        print("\n\n✗ 程序出错:")
+        traceback.print_exc()
+    finally:
+        # 打包成 exe 时,执行完毕保留窗口,按任意键退出
+        if getattr(sys, 'frozen', False):
+            try:
+                import msvcrt
+                print("\n按任意键退出...")
+                msvcrt.getch()
+            except (ImportError, OSError):
+                input("\n按回车键退出...")
