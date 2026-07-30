@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """ONES 工时自动填写工具（无需第三方依赖）"""
 
-__version__ = "1.0.3"
+__version__ = "1.1.0"
 
 import sys, io
 if sys.stdout.encoding and sys.stdout.encoding.upper() not in ("UTF-8", "UTF8"):
