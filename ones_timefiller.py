@@ -28,7 +28,15 @@ if getattr(sys, 'frozen', False):
 else:
     _APP_DIR = Path(__file__).parent
 
-CONFIG_FILE  = _APP_DIR / "config.json"
+# 用户配置目录：优先 ~/.ones-helper/config.json，回退到程序目录 config.json（兼容旧版）
+_USER_CFG_DIR = Path.home() / ".ones-helper"
+_USER_CFG_FILE = _USER_CFG_DIR / "config.json"
+_APP_CFG_FILE  = _APP_DIR / "config.json"
+# 实际使用的 config.json 路径：用户目录优先，不存在则用程序目录
+CONFIG_FILE = _USER_CFG_FILE if _USER_CFG_FILE.exists() else _APP_CFG_FILE
+# 写入时使用的路径（统一写入用户目录，不存在则创建）
+CONFIG_WRITE_FILE = _USER_CFG_FILE
+
 BASE_URL     = "https://ones.reachauto.com/project/api/project"   # GraphQL 用
 OQL_BASE     = "https://ones.reachauto.com/project/api/ones-project"  # OQL 用
 GRAPHQL_PATH = "/team/{team}/items/graphql"
@@ -83,20 +91,38 @@ def _try_refresh_token(cfg):
                 if new_token:
                     cfg["auth_token"] = new_token
                     # 同步写回 config.json
-                    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                        raw = json.load(f)
-                    raw["auth_token"] = new_token
-                    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                        json.dump(raw, f, ensure_ascii=False, indent=2)
+                    _save_config({"auth_token": new_token})
                     return True
         except Exception:
             continue
     return False
 
 
+def _save_config(updates):
+    """统一写配置：读取当前 config.json，合并 updates 字段，写入用户目录。
+    自动创建用户配置目录。失败时静默忽略。
+    """
+    try:
+        if CONFIG_FILE.exists():
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+        else:
+            raw = {}
+        raw.update(updates)
+        CONFIG_WRITE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(CONFIG_WRITE_FILE, "w", encoding="utf-8") as f:
+            json.dump(raw, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception:
+        return False
+
+
 def load_config():
     if not CONFIG_FILE.exists():
         print("\n⚠  找不到 config.json")
+        print(f"\n查找位置：")
+        print(f"  1. {CONFIG_WRITE_FILE} （用户目录，推荐）")
+        print(f"  2. {_APP_CFG_FILE} （程序目录）")
         print("\n获取方法: 浏览器 F12 → Application → Cookies → ones.reachauto.com")
         print("  需要: ones-lt (auth_token), ones-ids-sid (session_id)\n")
         choice = input("是否现在交互式创建 config.json？(y/n): ").strip().lower()
@@ -146,9 +172,9 @@ def load_config():
                 ]
             },
         }
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        with open(CONFIG_WRITE_FILE, "w", encoding="utf-8") as f:
             json.dump(new_cfg, f, ensure_ascii=False, indent=2)
-        print(f"\n✓ 已创建 {CONFIG_FILE}\n")
+        print(f"\n✓ 已创建 {CONFIG_WRITE_FILE}\n")
         return new_cfg
 
     with open(CONFIG_FILE, encoding="utf-8") as f:
@@ -177,12 +203,10 @@ def load_config():
             new_token = input("  粘贴新 token（直接回车跳过）: ").strip()
             if new_token and len(new_token) > 50:
                 cfg["auth_token"] = new_token
-                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                    raw = json.load(f)
-                raw["auth_token"] = new_token
-                with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                    json.dump(raw, f, ensure_ascii=False, indent=2)
-                print("  ✓ Token 已更新\n")
+                if _save_config({"auth_token": new_token}):
+                    print("  ✓ Token 已更新\n")
+                else:
+                    print("  ✗ 保存配置失败\n")
             else:
                 print("  跳过，继续运行（部分功能可能失败）\n")
 
@@ -616,10 +640,14 @@ def _extract_page_list(data):
 def fetch_italent_attendance(cfg, year, month, debug=False):
     """
     获取北森考勤数据：
-    1. 优先读取本地的 attendance.json
-    2. 其次通过配置的 italent_cookie 请求北森 API，若未配置或失效则提供交互式粘贴提示
+    1. 优先读取本地的 attendance.json（用户目录优先，回退到程序目录）
+    2. 其次通过配置的 italent_cookie 调用北森 v2 接口（TableList），
+       若未配置或失效则提供交互式粘贴提示
     """
-    local_file = Path(__file__).parent / "attendance.json"
+    # attendance.json 查找顺序与 config.json 一致：用户目录 → 程序目录
+    local_file = _USER_CFG_DIR / "attendance.json"
+    if not local_file.exists():
+        local_file = _APP_DIR / "attendance.json"
     if local_file.exists():
         if debug:
             print(f"  [Italent] 发现本地 {local_file.name}，优先使用文件数据")
@@ -634,42 +662,128 @@ def fetch_italent_attendance(cfg, year, month, debug=False):
         print("\n提示: 未检测到本地考勤数据 (attendance.json) 且未配置 italent_cookie。")
         print("如果想使用考勤系统加班数据，请提供 Cookie：")
         print("  1. 浏览器访问 www.italent.cn 登录并进入考勤统计页面")
-        print("  2. F12 ➜ Network ➜ 找到任意接口 (如 GetPageList) ➜ 复制 Request Headers 中的 Cookie")
+        print("  2. F12 ➜ Network ➜ 找到 TableList 接口 ➜ 复制 Request Headers 中的 Cookie")
         new_cookie = input("  粘贴 italent.cn Cookie (直接回车跳过): ").strip()
         if new_cookie:
             cookie = new_cookie
             cfg["italent_cookie"] = cookie
-            if CONFIG_FILE.exists():
-                try:
-                    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                        raw = json.load(f)
-                    raw["italent_cookie"] = cookie
-                    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                        json.dump(raw, f, ensure_ascii=False, indent=2)
-                    print("  ✓ Cookie 已保存至 config.json\n")
-                except Exception as e:
-                    print(f"  ✗ 保存 config.json 失败: {e}\n")
+            if _save_config({"italent_cookie": cookie}):
+                print(f"  ✓ Cookie 已保存至 {CONFIG_WRITE_FILE}\n")
+            else:
+                print("  ✗ 保存配置失败\n")
         else:
             print("  跳过，不使用考勤加班策略\n")
             return None
 
-    # Beisen appmodel query endpoint
-    url = cfg.get("italent_api_url", "https://cloud.italent.cn/api/v1/attendance/AttendanceStatistics/GetPageList")
-    
+    # 北森 v2 TableList 接口（云平台考勤页用的就是这个）
+    url = cfg.get(
+        "italent_api_url",
+        "https://cloud.italent.cn/api/v2/UI/TableList"
+        "?viewName=Attendance.SingleObjectListView.EmpAttendanceDataList"
+        "&metaObjName=Attendance.AttendanceStatistics&app=Attendance"
+        "&PaaS-SourceApp=Attendance&PaaS-CurrentView=Attendance.AttendanceDataRecordNavView"
+        "&frontendVersion=2025121900"
+        "&shadow_context=%7BappModel%3A%22italent%22%2Cuppid%3A%221%22%7D&_qsrcapp=attendance"
+    )
+    # quark_s 是请求指纹参数，可选；若不配置则不加（接口仍能通）
+    quark_s = cfg.get("italent_quark_s", "")
+    if quark_s:
+        url += f"&quark_s={quark_s}"
+
+    # 月份日期范围
+    last_day = calendar.monthrange(year, month)[1]
+    date_range = f"{year}/{month:02d}/01-{year}/{month:02d}/{last_day:02d}"
+
+    user_id   = cfg.get("italent_user_id", cfg.get("user_id", ""))
+    user_text = cfg.get("italent_user_text", "")
+    vid        = cfg.get("italent_vid", "")
+
     def _do_fetch(ck):
         headers = {
+            "Accept": "application/json, application/xml, text/play, text/html, */*",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "Connection": "keep-alive",
+            "Content-Type": "application/json; charset=utf-8",
             "Cookie": ck,
-            "Content-Type": "application/json;charset=UTF-8",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Origin": "https://www.italent.cn",
+            "Referer": "https://www.italent.cn/",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                          "(KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36 Edg/150.0.0.0",
+            "X-Sourced-By": "ajax",
+            "sec-ch-ua": '"Not;A=Brand";v="8", "Chromium";v="150", "Microsoft Edge";v="150"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Windows"',
         }
+        if vid:
+            headers["vid"] = vid
+
+        # 构造搜索条件：若未配置 user_text，则只按 user_id 过滤
+        search_items = [
+            {
+                "name": "Attendance.AttendanceStatistics.StaffId",
+                "text": user_text or user_id,
+                "value": user_id,
+                "num": "1",
+                "metaObjName": "",
+                "metaFieldRelationIDPath": "",
+                "queryAreaSubNodes": False,
+            },
+            {
+                "name": "Attendance.AttendanceStatistics.StdIsDeleted",
+                "text": "否", "value": "0", "num": "5",
+                "metaObjName": "", "metaFieldRelationIDPath": "",
+                "queryAreaSubNodes": False,
+            },
+            {
+                "name": "Attendance.AttendanceStatistics.Status",
+                "text": "启用", "value": "1", "num": "6",
+                "metaObjName": "", "metaFieldRelationIDPath": "",
+                "queryAreaSubNodes": False,
+            },
+            {
+                "name": "Attendance.AttendanceStatistics.SwipingCardDate",
+                "text": date_range, "value": date_range, "num": "",
+                "metaObjName": "", "metaFieldRelationIDPath": "",
+                "queryAreaSubNodes": False,
+            },
+        ]
+
         body = {
-            "metaObjName": "Attendance.AttendanceStatistics",
-            "viewName": "Attendance.AttendanceDataRecordNavView",
-            "pageIndex": 1,
-            "pageSize": 100,
+            "table_data": {
+                "advance": {"cmp_render": {"viewPath": "MyAttendanceStatisticsTable", "status": "enable"}},
+                "hasCheckColumn": True,
+                "ext_data": {"ListViewLabel": "我的考勤列表"},
+                "columnGroups": None,
+                "isEnableGlobleCheck": False,
+                "hasRowHandler": True,
+                "paging": {"total": 0, "capacity": 100, "page": 0, "capacityList": [15, 30, 60, 100]},
+                "isAvatars": True,
+                "viewName": "Attendance.SingleObjectListView.EmpAttendanceDataList",
+                "operateColumWidth": 140,
+                "extendsParam": "",
+                "isSyncRowHandler": True,
+                "isFrozenOperationColumnHandler": False,
+                "isCustomListViewExisted": True,
+                "getTreeNodeUrl": None,
+                "sort_fields": [{"sort_column": "SwipingCardDate", "sort_dir": "desc"}],
+                "linkRuleJsonV2": None,
+                "description": "员工出勤列表",
+                "metaObjName": "Attendance.AttendanceStatistics",
+                "isCustomListView": True,
+                "navViewIsCustom": False,
+                "navViewName": "Attendance.AttendanceDataRecordNavView",
+                "navViewVersion": "20240125162251229",
+            },
+            "search_data": {
+                "metaObjName": "Attendance.AttendanceStatistics",
+                "searchView": "Attendance.EmpAttendanceDataSearch",
+                "items": search_items,
+                "searchFormFilterJson": None,
+            },
         }
+
         if debug:
-            print(f"  [Italent] 正在请求北森接口: {url}")
+            print(f"  [Italent] 正在请求北森 v2 接口: {url[:100]}...")
         req = urllib.request.Request(
             url, data=json.dumps(body).encode("utf-8"), method="POST", headers=headers
         )
@@ -689,16 +803,7 @@ def fetch_italent_attendance(cfg, year, month, debug=False):
         new_cookie = input("  粘贴最新 italent.cn Cookie (直接回车跳过): ").strip()
         if new_cookie:
             cfg["italent_cookie"] = new_cookie
-            if CONFIG_FILE.exists():
-                try:
-                    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                        raw = json.load(f)
-                    raw["italent_cookie"] = new_cookie
-                    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                        json.dump(raw, f, ensure_ascii=False, indent=2)
-                    print("  ✓ Cookie 已更新并保存至 config.json\n")
-                except Exception:
-                    pass
+            _save_config({"italent_cookie": new_cookie})
             try:
                 return _do_fetch(new_cookie)
             except Exception as e2:
@@ -709,91 +814,83 @@ def fetch_italent_attendance(cfg, year, month, debug=False):
             return None
 
 
-def parse_italent_attendance(data, year, month, debug=False):
+def parse_italent_attendance(data, year, month, debug=False, cfg=None):
     """
     解析北森考勤数据，计算加班时间。
     返回 {date_obj: overtime_hours}。
+
+    v2 接口响应结构：
+        data["biz_data"] 是记录列表，每条记录里：
+            SwipingCardDate.text : "2026/07/30 星期四"
+            WorkPeriod.text      : "9.00"  (工作时长，含午休的打卡在勤时间)
+            DateType.text        : "工作日" / "公休日" / "节假日"
+
+    加班规则：
+        工作日：加班 = WorkPeriod - 标准工时（默认 9h，含 1h 午休），负值按 0
+        公休日/节假日：加班 = WorkPeriod 全算
     """
-    records = _extract_page_list(data)
+    records = data.get("biz_data") if isinstance(data, dict) else None
+    if not records and isinstance(data, dict):
+        records = _extract_page_list(data)  # 兼容旧的 attendance.json 格式
     if not records:
         if debug:
             print("  [Italent] 未能在 JSON 中找到数据列表")
         return {}
 
-    # 自动探测 Date 和 WorkDuration 的 Key
-    date_key = None
-    duration_key = None
-
-    # 从第一条记录中寻找 key
-    if records:
-        first = records[0]
-        # 寻找 Date key
-        date_key = _find_key_by_pattern(first, ["AttendanceDate", "date"])
-        # 寻找 WorkDuration key
-        duration_key = _find_key_by_pattern(first, ["WorkDuration", "Duration", "WorkHours", "workhours"])
-
-    if not date_key or not duration_key:
-        # 兜底猜测
-        if records and isinstance(records[0], dict):
-            for k in records[0].keys():
-                if not date_key and ("date" in k.lower() or "day" in k.lower()):
-                    date_key = k
-                if not duration_key and ("duration" in k.lower() or "hours" in k.lower() or "time" in k.lower() or "work" in k.lower()):
-                    duration_key = k
-        if not date_key: date_key = "AttendanceStatistics.AttendanceDate"
-        if not duration_key: duration_key = "AttendanceStatistics.WorkDuration"
-
-    if debug:
-        print(f"  [Italent] 探测到键名 - 日期: {date_key}, 时长: {duration_key}")
+    # 标准工时（每天在勤标准时长，含午休；工作日加班 = WorkPeriod - 此值）
+    std_hours = 9.0
+    if cfg and cfg.get("italent_standard_work_hours"):
+        try:
+            std_hours = float(cfg["italent_standard_work_hours"])
+        except (ValueError, TypeError):
+            pass
 
     overtime_map = {}
     for r in records:
         if not isinstance(r, dict):
             continue
-        d_val = r.get(date_key)
-        dur_val = r.get(duration_key)
-        if not d_val or dur_val is None:
-            continue
 
-        # 尝试解析日期，通常是 YYYY-MM-DD 或 YYYY-MM-DD HH:MM:SS
-        d_str = str(d_val)[:10]
+        # 日期：字段名 SwipingCardDate，value 是 "2026/07/30"，text 是 "2026/07/30 星期四"
+        sc = r.get("SwipingCardDate", {})
+        date_str = (sc.get("value") or sc.get("text") or "") if isinstance(sc, dict) else str(sc)
+        # 兼容 "2026/07/30" 或 "2026-07-30" 或 "2026/07/30 星期四"
+        m = re.search(r"(\d{4})[/-](\d{1,2})[/-](\d{1,2})", date_str)
+        if not m:
+            continue
         try:
-            dt = datetime.date.fromisoformat(d_str)
+            dt = datetime.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
         except ValueError:
             continue
-
-        # 只处理目标年份和月份
         if dt.year != year or dt.month != month:
             continue
 
-        # 解析时长
+        # 工作时长：字段名 WorkPeriod，text 是 "9.00"
+        wp = r.get("WorkPeriod", {})
+        wp_str = (wp.get("value") or wp.get("text") or "0") if isinstance(wp, dict) else str(wp)
         try:
-            work_duration = float(dur_val)
+            work_period = float(wp_str)
         except (ValueError, TypeError):
-            continue
+            work_period = 0.0
 
-        if work_duration <= 0.001:
-            continue
+        # 日期类型：工作日 / 公休日 / 节假日
+        dt_obj = r.get("DateType", {})
+        date_type_text = (dt_obj.get("text") or "") if isinstance(dt_obj, dict) else str(dt_obj)
+        is_workday = "公休" not in date_type_text and "节假" not in date_type_text and "假" not in date_type_text
 
-        # 减去一小时（午休）作为工作时间
-        actual_work_hours = work_duration - 1.0
-        
-        # 如果超过8，四舍五入为整小时作为当天应填写的工时
-        if actual_work_hours > 8.0:
-            rounded_work_hours = int(actual_work_hours + 0.5)
-            # 再减去 8 就是加班工时
-            ot_hours = max(0, rounded_work_hours - 8)
+        if is_workday:
+            ot = max(0.0, work_period - std_hours)
         else:
-            ot_hours = 0
+            # 公休/节假日：WorkPeriod 全算加班
+            ot = work_period
 
-        if ot_hours > 0:
-            overtime_map[dt] = ot_hours
+        if ot > 0:
+            overtime_map[dt] = round(ot, 2)
 
     if debug:
         print(f"  [Italent] 解析完成，本月考勤加班明细:")
-        for dt, ot in sorted(overtime_map.items()):
-            print(f"    {dt}: {ot}h")
-            
+        for d, ot in sorted(overtime_map.items()):
+            print(f"    {d}: {ot}h")
+
     return overtime_map
 
 
@@ -1468,7 +1565,7 @@ def main():
         print("正在获取考勤系统数据...", end="", flush=True)
         italent_data = fetch_italent_attendance(cfg, year, month, debug=args.debug)
         if italent_data:
-            attendance_ot = parse_italent_attendance(italent_data, year, month, debug=args.debug)
+            attendance_ot = parse_italent_attendance(italent_data, year, month, debug=args.debug, cfg=cfg)
             if attendance_ot:
                 use_attendance_strategy = True
                 total_ot_hours = sum(attendance_ot.values())

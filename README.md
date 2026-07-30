@@ -29,9 +29,24 @@ ONES 工时自动计划与填写工具，适用于 `ones.reachauto.com`。
 
 ### 1. 准备配置文件
 
+程序按以下顺序查找 `config.json`：
+
+1. **用户目录**（推荐）：`C:\Users\<用户名>\.ones-helper\config.json` —— 程序所有写入操作（token 刷新、cookie 更新）都写入这里，避免与代码混在一起
+2. **程序目录**（兼容旧版）：与 `ones_timefiller.py` / `ones-timefiller.exe` 同目录的 `config.json`
+
+**方式 A：交互式创建（推荐）**
+
+直接运行 `run.bat`，若检测不到 `config.json` 会询问是否创建，只需粘贴 `ones-lt`（auth_token）和 `ones-ids-sid`（session_id），其余字段自动解析，自动生成到 `~/.ones-helper/config.json`。
+
+**方式 B：手动复制模板**
+
 ```bash
-# 复制模板文件
-cp config.example.json config.json
+# 复制模板到用户目录（推荐）
+mkdir %USERPROFILE%\.ones-helper
+copy config.example.json %USERPROFILE%\.ones-helper\config.json
+
+# 或复制到程序目录（兼容旧版）
+copy config.example.json config.json
 ```
 
 ### 2. 获取并填入认证信息
@@ -135,13 +150,26 @@ run.bat --manual
 
 ### 4. 北森考勤系统加班策略 (优先使用)
 
-*   **说明**：支持从北森考勤系统 (Italent) 获取当月每天的工作时长，并根据以下规则自动计算加班工时：
-    *   `当天加班工时 = 四舍五入(工作时长 - 1小时午休) - 8`
+*   **说明**：支持从北森考勤系统 (Italent) 自动获取当月每天的工作时长（按当月第一天到最后一天，与 ONES 工时查询对齐），并根据以下规则自动计算加班工时：
+    *   **工作日**：加班工时 = `WorkPeriod - 标准工时`（默认 9h，含 1h 午休；负值按 0）
+    *   **公休日/节假日**：加班工时 = `WorkPeriod`（全天打卡时长全算加班）
     *   该策略计算出的加班工时将**优先使用**，并自动按天分配在日历中。
 *   **如何启用 (三选一)**：
-    1.  **离线文件方式 (推荐)**：抓包复制考勤数据接口的 Response JSON，在同级目录下保存为 `attendance.json` (模板见 `attendance.example.json`)。
-    2.  **快捷交互粘贴**：直接运行脚本，若未检测到配置，控制台会提示粘贴 Cookie，输入后会自动保存到 `config.json` 并在今后自动使用。
-    3.  **配置文件写入**：在 `config.json` 中配置 `"italent_cookie": "你的Cookie"`。
+    1.  **配置文件方式 (推荐)**：在 `config.json` 中配置以下字段：
+        ```json
+        "italent_cookie": "粘贴 italent.cn 的 Cookie",
+        "italent_user_id": "北森员工 ID（F12 请求头 user_id）",
+        "italent_user_text": "员工显示文本（F12 TableList 请求体 search_data.items[0].text）",
+        "italent_vid": "vid 值（可选，F12 请求头 vid）",
+        "italent_standard_work_hours": 9
+        ```
+    2.  **离线文件方式**：抓包复制考勤数据接口的 Response JSON，保存为 `attendance.json`（与 config.json 同目录，或放用户目录 `~/.ones-helper/`），程序会优先使用本地文件。
+    3.  **快捷交互粘贴**：直接运行脚本，若未检测到 `italent_cookie`，控制台会提示粘贴 Cookie，输入后会自动保存到 `~/.ones-helper/config.json` 并在今后自动使用。
+*   **获取 Cookie 步骤**：
+    1. 浏览器登录 [www.italent.cn](https://www.italent.cn) 进入"我的考勤"页面
+    2. F12 → Network → 刷新或切换月份触发数据加载
+    3. 找到 `TableList` 接口（POST 请求，URL 含 `/api/v2/UI/TableList`）
+    4. 复制 Request Headers 中的 `Cookie` 值
 
 ---
 

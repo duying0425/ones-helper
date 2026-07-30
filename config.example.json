@@ -1,24 +1,40 @@
 {
   "_说明": "复制此文件为 config.json，填入你的认证信息。config.json 已在 .gitignore 中，不会被提交。",
 
-  "user_id":    "Ct2ZgE8u",
-  "_user_id说明": "从 JWT(ones-lt) 中解析的 org_user_uuid，程序启动时会自动提示",
+  "user_id":    "",
+  "_user_id说明": "从 JWT(ones-lt) 中解析的 org_user_uuid，程序启动时会自动提示（也可在交互式创建时自动解析）",
 
-  "auth_token": "粘贴 ones-lt cookie 的完整值（JWT 格式，约1小时过期，过期时程序会提示更新）",
+  "auth_token": "",
+  "_auth_token说明": "ones-lt cookie 的完整值（JWT 格式，约1小时过期，过期时程序会提示更新）",
 
   "team_uuid":  "SpBJdKsD",
-  "_team_uuid说明": "浏览器 URL 中 /team/{team_uuid}/",
+  "_team_uuid说明": "浏览器 URL 中 /team/{team_uuid}/，默认 SpBJdKsD",
 
-  "session_id": "512a26a8-edcb-4659-7592-e836a425d1d1",
+  "session_id": "",
   "_session_id说明": "ones-ids-sid cookie 值，有效期数月，用于 token 自动刷新",
 
-  "_optional": "以下为可选配置",
+  "_optional": "以下为可选配置（不填也能用，跳过对应功能即可）",
 
-  "italent_cookie": "粘贴 italent.cn 或 cloud.italent.cn 的 Cookie 字符串以自动抓取考勤系统加班时间",
-  "_italent_cookie说明": "可选，若不配置可通过在同级目录下放置 attendance.json 静态数据作为替代",
+  "italent_cookie": "",
+  "_italent_cookie说明": "可选，粘贴 italent.cn 或 cloud.italent.cn 的 Cookie 字符串以自动抓取考勤系统加班时间",
 
-  "italent_api_url": "https://cloud.italent.cn/api/v1/attendance/AttendanceStatistics/GetPageList",
-  "_italent_api_url说明": "可选，北森考勤接口 API 地址",
+  "italent_user_id": "",
+  "_italent_user_id说明": "北森员工 ID（如要使用考勤功能必填）。F12 → 请求头 user_id 字段",
+
+  "italent_user_text": "",
+  "_italent_user_text说明": "员工显示文本，与 italent_user_id 一起作为搜索条件。F12 → TableList 请求体 search_data.items[0].text",
+
+  "italent_vid": "",
+  "_italent_vid说明": "北森请求头里的 vid 值（浏览器会话标识）。可选，不填也能用",
+
+  "italent_quark_s": "",
+  "_italent_quark_s说明": "可选，TableList 接口 URL 里的 quark_s 指纹参数。通常不填也能通",
+
+  "italent_standard_work_hours": 9,
+  "_italent_standard_work_hours说明": "工作日每天标准在勤时长（含午休），加班 = WorkPeriod - 此值。默认 9h（8h工作+1h午休）",
+
+  "italent_api_url": "https://cloud.italent.cn/api/v2/UI/TableList?viewName=Attendance.SingleObjectListView.EmpAttendanceDataList&metaObjName=Attendance.AttendanceStatistics&app=Attendance&PaaS-SourceApp=Attendance&PaaS-CurrentView=Attendance.AttendanceDataRecordNavView&frontendVersion=2025121900&shadow_context=%7BappModel%3A%22italent%22%2Cuppid%3A%221%22%7D&_qsrcapp=attendance",
+  "_italent_api_url说明": "可选，北森 v2 考勤接口地址。如北森改版失效，从 F12 重新复制",
 
   "overtime_daily_max": 4,
   "_overtime说明": "默认加班模式下每天最多额外记录的小时数，默认 4h（即 8+4=12h/天上限）",
