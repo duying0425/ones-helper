@@ -1657,8 +1657,11 @@ def main():
 
     if api_entries and ok_cnt > 0:
         filled_uuids  = {e["task_uuid"] for e in api_entries}
+        # 纳入候选：刚提交工时的任务 + 预计工时为0的任务（无需填工时，不受"是否提交"限制）
         inprog_filled = [t for t in tasks
-                         if _is_stage2_candidate(t) and t["uuid"] in filled_uuids]
+                         if _is_stage2_candidate(t)
+                         and (t["uuid"] in filled_uuids
+                              or t.get("_estimated", 0.0) <= 0)]
     else:
         inprog_filled = [t for t in tasks if _is_stage2_candidate(t)]
     if inprog_filled:
