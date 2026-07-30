@@ -883,8 +883,9 @@ def parse_italent_attendance(data, year, month, debug=False, cfg=None):
             # 公休/节假日：WorkPeriod 全算加班
             ot = work_period
 
+        # 以 1 小时为最小单位，四舍五入（标准数学四舍五入，0.5 进 1）
         if ot > 0:
-            overtime_map[dt] = round(ot, 2)
+            overtime_map[dt] = int(ot + 0.5)
 
     if debug:
         print(f"  [Italent] 解析完成，本月考勤加班明细:")
