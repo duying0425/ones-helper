@@ -81,7 +81,7 @@ export async function readOnesCookies() {
   if (bestToken) map["ones-lt"] = bestToken;
 
   const authToken = bestToken || "";
-  const userId = jwtUserId(authToken);
+  const userId = jwtUserId(authToken) || map["ones-uid"] || map["ones_uid"] || "";
 
   return {
     auth_token: authToken,
