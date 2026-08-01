@@ -1,0 +1,390 @@
+{
+  "extName": {
+    "message": "ONES Hours Helper",
+    "description": "Extension name"
+  },
+  "extDescription": {
+    "message": "Automatic work-hours planner and filler for ONES. Reads browser login session automatically, provides a standalone panel for hours planning, submission, and task status transitions.",
+    "description": "Extension description"
+  },
+  "popupTitle": {
+    "message": "ONES Hours Helper",
+    "description": "Popup title header"
+  },
+  "popupStatusChecking": {
+    "message": "ONES: Checking...",
+    "description": "Status text while checking auth"
+  },
+  "popupLoggedIn": {
+    "message": "ONES: Logged in",
+    "description": "Status when logged in"
+  },
+  "popupTokenExpired": {
+    "message": "ONES: Token expired",
+    "description": "Status when token expired"
+  },
+  "popupNotLoggedIn": {
+    "message": "ONES: Not logged in",
+    "description": "Status when not logged in"
+  },
+  "popupTokenRefreshed": {
+    "message": "ONES: Token auto-refreshed",
+    "description": "Status when token auto-refreshed"
+  },
+  "popupCheckFailed": {
+    "message": "ONES: Check failed",
+    "description": "Status when check failed"
+  },
+  "popupBtnDashboard": {
+    "message": "Open Hours Panel",
+    "description": "Button to open dashboard"
+  },
+  "popupBtnRefresh": {
+    "message": "Refresh Auth Status",
+    "description": "Button to refresh auth status"
+  },
+  "popupBtnOptions": {
+    "message": "Options",
+    "description": "Button to open options page"
+  },
+  "popupBtnSyncOnes": {
+    "message": "Sync Auth",
+    "description": "Button to sync token from active tab"
+  },
+  "popupBtnLogin": {
+    "message": "Login",
+    "description": "Login button in popup status row"
+  },
+  "popupLoginOpened": {
+    "message": "Opened",
+    "description": "Login button: opened state"
+  },
+  "popupLoginTip": {
+    "message": "Opened the {site} login page. After completing login, reopen this popup or click \"Refresh Auth Status\".",
+    "description": "Toast: login page opened tip"
+  },
+  "popupVisitOnes": {
+    "message": "Visit ONES",
+    "description": "Link to visit ONES site"
+  },
+  "popupItalentChecking": {
+    "message": "Beisen: Checking...",
+    "description": "Popup italent status: checking"
+  },
+  "popupItalentLoggedIn": {
+    "message": "Beisen: Logged in",
+    "description": "Popup italent status: logged in"
+  },
+  "popupItalentNotLoggedIn": {
+    "message": "Beisen: Not logged in (optional)",
+    "description": "Popup italent status: not logged in"
+  },
+  "optionsItalentSubtitle": {
+    "message": "After logging in to cloud.italent.cn in the browser, this extension reads cookies automatically — no manual input required.",
+    "description": "Options italent subtitle"
+  },
+  "optionsItalentChecking": {
+    "message": "Beisen: Checking...",
+    "description": "Options italent: checking"
+  },
+  "optionsItalentRecheck": {
+    "message": "Recheck",
+    "description": "Options italent: recheck button"
+  },
+  "optionsItalentOk": {
+    "message": "Beisen: Logged in",
+    "description": "Options italent: ok"
+  },
+  "optionsItalentNotLoggedIn": {
+    "message": "Beisen: Not logged in (optional)",
+    "description": "Options italent: not logged in"
+  },
+  "optionsItalentCheckFailed": {
+    "message": "Beisen: Check failed",
+    "description": "Options italent: check failed"
+  },
+  "optionsItalentCookieCount": {
+    "message": "Cookie count",
+    "description": "Options italent: cookie count"
+  },
+  "optionsItalentUserId": {
+    "message": "User ID",
+    "description": "Options italent: user id"
+  },
+  "optionsItalentUserText": {
+    "message": "User name",
+    "description": "Options italent: user text"
+  },
+  "optionsItalentLoginTip": {
+    "message": "Please open www.italent.cn/portal in the browser and log in, then return here and click \"Recheck\".",
+    "description": "Options italent: login tip"
+  },
+  "optionsTitle": {
+    "message": "ONES Helper Options",
+    "description": "Options page title"
+  },
+  "optionsSubtitle": {
+    "message": "ONES cookies are read automatically after browser login; no manual input required here.",
+    "description": "Options page subtitle"
+  },
+  "optionsCookieHint": {
+    "message": "Tip: As long as you stay logged in to ones.reachauto.com in the browser, this extension automatically reads ones-lt / ones-ids-sid / ones-uid with no manual action.",
+    "description": "Cookie hint in options"
+  },
+  "optionsSectionStatus": {
+    "message": "System Connection Status",
+    "description": "Section title: system connection status"
+  },
+  "optionsSectionBasic": {
+    "message": "Parameter Configuration",
+    "description": "Section title: basic config"
+  },
+  "optionsAutoReadHint": {
+    "message": "Auto-read",
+    "description": "Hint shown next to readonly auto-read fields (Team UUID / Org UUID)"
+  },
+  "optionsLabelDailyMax": {
+    "message": "Max Daily Overtime (h)",
+    "description": "Label for daily max overtime"
+  },
+  "optionsLabelStandardHours": {
+    "message": "Standard Work Hours (h)",
+    "description": "Label for standard work hours"
+  },
+  "optionsHolidaysSubtitle": {
+    "message": "JSON format: Custom off/on workday dates",
+    "description": "Subtitle for holiday patch"
+  },
+  "optionsWorkflowSubtitle": {
+    "message": "Defines status sequences from start to end for each issue type",
+    "description": "Subtitle for workflow section"
+  },
+  "optionsBtnAddType": {
+    "message": "+ Add Issue Type",
+    "description": "Button to add workflow type"
+  },
+  "optionsSectionItalent": {
+    "message": "Beisen Attendance System (optional)",
+    "description": "Section title: italent"
+  },
+  "optionsSectionHolidays": {
+    "message": "Holiday Patches",
+    "description": "Section title: holidays"
+  },
+  "optionsSectionWorkflow": {
+    "message": "Status Transition Workflow",
+    "description": "Section title: workflow"
+  },
+  "optionsBtnSave": {
+    "message": "Save",
+    "description": "Save button"
+  },
+  "optionsBtnReset": {
+    "message": "Reset to Default",
+    "description": "Reset button"
+  },
+  "optionsBtnExport": {
+    "message": "Export config.json",
+    "description": "Export button"
+  },
+  "optionsSaved": {
+    "message": "Saved",
+    "description": "Toast: saved"
+  },
+  "optionsResetDone": {
+    "message": "Reset to default",
+    "description": "Toast: reset done"
+  },
+  "optionsExported": {
+    "message": "Exported config.json",
+    "description": "Toast: exported"
+  },
+  "optionsJsonError": {
+    "message": "Holiday JSON format error",
+    "description": "Toast: JSON parse error"
+  },
+  "dashboardTitle": {
+    "message": "ONES Hours Panel",
+    "description": "Dashboard page title"
+  },
+  "dashboardBtnDebug": {
+    "message": "Debug",
+    "description": "Debug button"
+  },
+  "dashboardBtnOptions": {
+    "message": "Options",
+    "description": "Options button"
+  },
+  "dashboardBtnRefresh": {
+    "message": "Reload",
+    "description": "Refresh button"
+  },
+  "dashboardBtnDryRun": {
+    "message": "Preview Mode",
+    "description": "Dry-run button"
+  },
+  "dashboardStep1": {
+    "message": "Fetch Data",
+    "description": "Step 1"
+  },
+  "dashboardStep2": {
+    "message": "Plan Hours",
+    "description": "Step 2"
+  },
+  "dashboardStep3": {
+    "message": "Preview Distribution",
+    "description": "Step 3"
+  },
+  "dashboardStep4": {
+    "message": "Submit Hours",
+    "description": "Step 4"
+  },
+  "dashboardStep5": {
+    "message": "Status Transition",
+    "description": "Step 5"
+  },
+  "dashboardStep6": {
+    "message": "Done",
+    "description": "Step 6"
+  },
+  "dashboardStatCapacity": {
+    "message": "Capacity",
+    "description": "Stat: capacity"
+  },
+  "dashboardStatFilled": {
+    "message": "Filled",
+    "description": "Stat: filled"
+  },
+  "dashboardStatGap": {
+    "message": "Gap",
+    "description": "Stat: gap"
+  },
+  "dashboardStatOvertime": {
+    "message": "Overtime",
+    "description": "Stat: overtime"
+  },
+  "dashboardGapRemain": {
+    "message": "Short",
+    "description": "Gap: remain prefix"
+  },
+  "dashboardGapFull": {
+    "message": "Full",
+    "description": "Gap: full"
+  },
+  "dashboardOvertimeDisabled": {
+    "message": "Disabled",
+    "description": "Overtime: disabled"
+  },
+  "dashboardLoading": {
+    "message": "Loading data...",
+    "description": "Loading text"
+  },
+  "dashboardLoadFailed": {
+    "message": "Load failed",
+    "description": "Load failed"
+  },
+  "dashboardNextBtn": {
+    "message": "Next",
+    "description": "Next button"
+  },
+  "dashboardCalcBtn": {
+    "message": "Calculate",
+    "description": "Calc distribution button"
+  },
+  "dashboardConfirmSubmit": {
+    "message": "Confirm Submit",
+    "description": "Confirm submit button"
+  },
+  "dashboardPreviewDone": {
+    "message": "Preview Done",
+    "description": "Preview done button"
+  },
+  "dashboardRestart": {
+    "message": "Restart",
+    "description": "Restart button"
+  },
+  "dashboardSubmitting": {
+    "message": "Submitting",
+    "description": "Submitting prefix"
+  },
+  "dashboardSubmitDone": {
+    "message": "Done: success",
+    "description": "Submit done prefix"
+  },
+  "dashboardSubmitFail": {
+    "message": ", failed",
+    "description": "Submit fail count"
+  },
+  "dashboardPreviewMode": {
+    "message": "Preview mode: no real submission",
+    "description": "Preview mode tip"
+  },
+  "dashboardNoTransitionCandidates": {
+    "message": "No tasks to transition",
+    "description": "No transition candidates"
+  },
+  "dashboardExecTransition": {
+    "message": "Confirm transition of",
+    "description": "Confirm exec transition prefix"
+  },
+  "dashboardTasksTransition": {
+    "message": "tasks?",
+    "description": "Tasks transition suffix"
+  },
+  "dashboardTransitionRunning": {
+    "message": "Transitioning...",
+    "description": "Transition running"
+  },
+  "dashboardTransitionDone": {
+    "message": "Done: success",
+    "description": "Transition done prefix"
+  },
+  "dashboardAllDone": {
+    "message": "All steps completed",
+    "description": "All done"
+  },
+  "dashboardColTask": {
+    "message": "Task Name",
+    "description": "Column task name"
+  },
+  "dashboardColProject": {
+    "message": "Project",
+    "description": "Column project"
+  },
+  "dashboardColStatus": {
+    "message": "Status",
+    "description": "Column status"
+  },
+  "dashboardColRemaining": {
+    "message": "Remaining (h)",
+    "description": "Column remaining"
+  },
+  "dashboardColPlanned": {
+    "message": "Planned (h)",
+    "description": "Column planned"
+  },
+  "dashboardColAction": {
+    "message": "Action",
+    "description": "Column action"
+  },
+  "dashboardDateCol": {
+    "message": "Date",
+    "description": "Column date"
+  },
+  "dashboardDayTypeCol": {
+    "message": "Type",
+    "description": "Column day type"
+  },
+  "dashboardNormalHoursCol": {
+    "message": "Normal Hours",
+    "description": "Column normal hours"
+  },
+  "dashboardOvertimeHoursCol": {
+    "message": "Overtime Hours",
+    "description": "Column overtime hours"
+  },
+  "dashboardTaskDetailCol": {
+    "message": "Assigned Tasks Detail",
+    "description": "Column task detail"
+  }
+}

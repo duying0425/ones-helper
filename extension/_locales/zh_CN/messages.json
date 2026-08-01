@@ -1,0 +1,390 @@
+{
+  "extName": {
+    "message": "ONES 工时助手",
+    "description": "Extension name"
+  },
+  "extDescription": {
+    "message": "ONES 工时自动计划与填写工具，自动读取浏览器登录态，独立面板完成工时规划、提交与任务状态流转。",
+    "description": "Extension description"
+  },
+  "popupTitle": {
+    "message": "ONES 工时助手",
+    "description": "Popup title header"
+  },
+  "popupStatusChecking": {
+    "message": "ONES：检查中...",
+    "description": "Status text while checking auth"
+  },
+  "popupLoggedIn": {
+    "message": "ONES：已登录",
+    "description": "Status when logged in"
+  },
+  "popupTokenExpired": {
+    "message": "ONES：Token 已过期",
+    "description": "Status when token expired"
+  },
+  "popupNotLoggedIn": {
+    "message": "ONES：未登录",
+    "description": "Status when not logged in"
+  },
+  "popupTokenRefreshed": {
+    "message": "ONES：Token 已自动刷新",
+    "description": "Status when token auto-refreshed"
+  },
+  "popupCheckFailed": {
+    "message": "ONES：检查失败",
+    "description": "Status when check failed"
+  },
+  "popupBtnDashboard": {
+    "message": "打开工时填写面板",
+    "description": "Button to open dashboard"
+  },
+  "popupBtnRefresh": {
+    "message": "刷新认证状态",
+    "description": "Button to refresh auth status"
+  },
+  "popupBtnOptions": {
+    "message": "配置选项",
+    "description": "Button to open options page"
+  },
+  "popupBtnSyncOnes": {
+    "message": "同步凭证",
+    "description": "Button to sync token from active tab"
+  },
+  "popupBtnLogin": {
+    "message": "登录",
+    "description": "Login button in popup status row"
+  },
+  "popupLoginOpened": {
+    "message": "已打开",
+    "description": "Login button: opened state"
+  },
+  "popupLoginTip": {
+    "message": "已打开{site}登录页，完成登录后请重新点开本插件或点击\"刷新认证状态\"",
+    "description": "Toast: login page opened tip"
+  },
+  "popupVisitOnes": {
+    "message": "访问 ONES",
+    "description": "Link to visit ONES site"
+  },
+  "popupItalentChecking": {
+    "message": "北森考勤：检查中...",
+    "description": "Popup italent status: checking"
+  },
+  "popupItalentLoggedIn": {
+    "message": "北森考勤：已登录",
+    "description": "Popup italent status: logged in"
+  },
+  "popupItalentNotLoggedIn": {
+    "message": "北森考勤：未登录（可选）",
+    "description": "Popup italent status: not logged in"
+  },
+  "optionsItalentSubtitle": {
+    "message": "在浏览器中登录 cloud.italent.cn 后，本扩展自动读取 Cookie，无需手动填写。",
+    "description": "Options italent subtitle"
+  },
+  "optionsItalentChecking": {
+    "message": "北森考勤：检测中...",
+    "description": "Options italent: checking"
+  },
+  "optionsItalentRecheck": {
+    "message": "重新检测",
+    "description": "Options italent: recheck button"
+  },
+  "optionsItalentOk": {
+    "message": "北森考勤：已登录",
+    "description": "Options italent: ok"
+  },
+  "optionsItalentNotLoggedIn": {
+    "message": "北森考勤：未登录（可选）",
+    "description": "Options italent: not logged in"
+  },
+  "optionsItalentCheckFailed": {
+    "message": "北森考勤：检测失败",
+    "description": "Options italent: check failed"
+  },
+  "optionsItalentCookieCount": {
+    "message": "Cookie 数量",
+    "description": "Options italent: cookie count"
+  },
+  "optionsItalentUserId": {
+    "message": "用户 ID",
+    "description": "Options italent: user id"
+  },
+  "optionsItalentUserText": {
+    "message": "用户姓名",
+    "description": "Options italent: user text"
+  },
+  "optionsItalentLoginTip": {
+    "message": "请在浏览器中打开 www.italent.cn/portal 并登录，然后回到此页点击\"重新检测\"。",
+    "description": "Options italent: login tip"
+  },
+  "optionsTitle": {
+    "message": "ONES Helper 配置",
+    "description": "Options page title"
+  },
+  "optionsSubtitle": {
+    "message": "ONES Cookie 在浏览器登录后自动读取，无需在此手动填写。",
+    "description": "Options page subtitle"
+  },
+  "optionsCookieHint": {
+    "message": "提示：只要在浏览器中保持登录 ones.reachauto.com，本扩展会自动读取 ones-lt / ones-ids-sid / ones-uid，无需任何手动操作。",
+    "description": "Cookie hint in options"
+  },
+  "optionsSectionStatus": {
+    "message": "系统连接状态",
+    "description": "Section title: system connection status"
+  },
+  "optionsSectionBasic": {
+    "message": "参数配置",
+    "description": "Section title: basic config"
+  },
+  "optionsAutoReadHint": {
+    "message": "自动读取",
+    "description": "Hint shown next to readonly auto-read fields (Team UUID / Org UUID)"
+  },
+  "optionsLabelDailyMax": {
+    "message": "每日加班上限 (h)",
+    "description": "Label for daily max overtime"
+  },
+  "optionsLabelStandardHours": {
+    "message": "标准在勤时长 (h)",
+    "description": "Label for standard work hours"
+  },
+  "optionsHolidaysSubtitle": {
+    "message": "JSON 格式：自定义放假/补班日期",
+    "description": "Subtitle for holiday patch"
+  },
+  "optionsWorkflowSubtitle": {
+    "message": "每个类型定义从开始到终态的状态序列。最后一步只需 status，作为终态。",
+    "description": "Subtitle for workflow section"
+  },
+  "optionsBtnAddType": {
+    "message": "+ 添加工作项类型",
+    "description": "Button to add workflow type"
+  },
+  "optionsSectionItalent": {
+    "message": "北森考勤系统（可选）",
+    "description": "Section title: italent"
+  },
+  "optionsSectionHolidays": {
+    "message": "节假日补丁",
+    "description": "Section title: holidays"
+  },
+  "optionsSectionWorkflow": {
+    "message": "状态流转工作流",
+    "description": "Section title: workflow"
+  },
+  "optionsBtnSave": {
+    "message": "保存配置",
+    "description": "Save button"
+  },
+  "optionsBtnReset": {
+    "message": "重置为默认",
+    "description": "Reset button"
+  },
+  "optionsBtnExport": {
+    "message": "导出 config.json",
+    "description": "Export button"
+  },
+  "optionsSaved": {
+    "message": "已保存",
+    "description": "Toast: saved"
+  },
+  "optionsResetDone": {
+    "message": "已重置为默认",
+    "description": "Toast: reset done"
+  },
+  "optionsExported": {
+    "message": "已导出 config.json",
+    "description": "Toast: exported"
+  },
+  "optionsJsonError": {
+    "message": "节假日 JSON 格式错误",
+    "description": "Toast: JSON parse error"
+  },
+  "dashboardTitle": {
+    "message": "ONES 工时填写面板",
+    "description": "Dashboard page title"
+  },
+  "dashboardBtnDebug": {
+    "message": "调试",
+    "description": "Debug button"
+  },
+  "dashboardBtnOptions": {
+    "message": "配置",
+    "description": "Options button"
+  },
+  "dashboardBtnRefresh": {
+    "message": "重新加载",
+    "description": "Refresh button"
+  },
+  "dashboardBtnDryRun": {
+    "message": "预览模式",
+    "description": "Dry-run button"
+  },
+  "dashboardStep1": {
+    "message": "获取数据",
+    "description": "Step 1"
+  },
+  "dashboardStep2": {
+    "message": "规划工时",
+    "description": "Step 2"
+  },
+  "dashboardStep3": {
+    "message": "预览分配",
+    "description": "Step 3"
+  },
+  "dashboardStep4": {
+    "message": "提交工时",
+    "description": "Step 4"
+  },
+  "dashboardStep5": {
+    "message": "状态流转",
+    "description": "Step 5"
+  },
+  "dashboardStep6": {
+    "message": "完成",
+    "description": "Step 6"
+  },
+  "dashboardStatCapacity": {
+    "message": "月度容量",
+    "description": "Stat: capacity"
+  },
+  "dashboardStatFilled": {
+    "message": "已填工时",
+    "description": "Stat: filled"
+  },
+  "dashboardStatGap": {
+    "message": "月度缺口",
+    "description": "Stat: gap"
+  },
+  "dashboardStatOvertime": {
+    "message": "加班工时",
+    "description": "Stat: overtime"
+  },
+  "dashboardGapRemain": {
+    "message": "还差",
+    "description": "Gap: remain prefix"
+  },
+  "dashboardGapFull": {
+    "message": "已填满",
+    "description": "Gap: full"
+  },
+  "dashboardOvertimeDisabled": {
+    "message": "未启用",
+    "description": "Overtime: disabled"
+  },
+  "dashboardLoading": {
+    "message": "正在加载数据...",
+    "description": "Loading text"
+  },
+  "dashboardLoadFailed": {
+    "message": "加载失败",
+    "description": "Load failed"
+  },
+  "dashboardNextBtn": {
+    "message": "下一步",
+    "description": "Next button"
+  },
+  "dashboardCalcBtn": {
+    "message": "计算分配",
+    "description": "Calc distribution button"
+  },
+  "dashboardConfirmSubmit": {
+    "message": "确认提交",
+    "description": "Confirm submit button"
+  },
+  "dashboardPreviewDone": {
+    "message": "完成预览",
+    "description": "Preview done button"
+  },
+  "dashboardRestart": {
+    "message": "重新开始",
+    "description": "Restart button"
+  },
+  "dashboardSubmitting": {
+    "message": "正在提交",
+    "description": "Submitting prefix"
+  },
+  "dashboardSubmitDone": {
+    "message": "提交完成：成功",
+    "description": "Submit done prefix"
+  },
+  "dashboardSubmitFail": {
+    "message": "条，失败",
+    "description": "Submit fail count"
+  },
+  "dashboardPreviewMode": {
+    "message": "预览模式：不会真实提交",
+    "description": "Preview mode tip"
+  },
+  "dashboardNoTransitionCandidates": {
+    "message": "无可流转任务",
+    "description": "No transition candidates"
+  },
+  "dashboardExecTransition": {
+    "message": "确认执行",
+    "description": "Confirm exec transition prefix"
+  },
+  "dashboardTasksTransition": {
+    "message": "个任务的状态流转？",
+    "description": "Tasks transition suffix"
+  },
+  "dashboardTransitionRunning": {
+    "message": "正在执行流转...",
+    "description": "Transition running"
+  },
+  "dashboardTransitionDone": {
+    "message": "流转完成：成功",
+    "description": "Transition done prefix"
+  },
+  "dashboardAllDone": {
+    "message": "全部流程已完成",
+    "description": "All done"
+  },
+  "dashboardColTask": {
+    "message": "任务名称",
+    "description": "Column task name"
+  },
+  "dashboardColProject": {
+    "message": "所属项目",
+    "description": "Column project"
+  },
+  "dashboardColStatus": {
+    "message": "当前状态",
+    "description": "Column status"
+  },
+  "dashboardColRemaining": {
+    "message": "剩余预计 (h)",
+    "description": "Column remaining"
+  },
+  "dashboardColPlanned": {
+    "message": "规划分配 (h)",
+    "description": "Column planned"
+  },
+  "dashboardColAction": {
+    "message": "操作",
+    "description": "Column action"
+  },
+  "dashboardDateCol": {
+    "message": "日期",
+    "description": "Column date"
+  },
+  "dashboardDayTypeCol": {
+    "message": "类型",
+    "description": "Column day type"
+  },
+  "dashboardNormalHoursCol": {
+    "message": "常规工时",
+    "description": "Column normal hours"
+  },
+  "dashboardOvertimeHoursCol": {
+    "message": "加班工时",
+    "description": "Column overtime hours"
+  },
+  "dashboardTaskDetailCol": {
+    "message": "分配任务明细",
+    "description": "Column task detail"
+  }
+}

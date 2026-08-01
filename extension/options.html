@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>ONES Helper 配置</title>
+  <link rel="stylesheet" href="src/styles.css" />
+  <style>
+    body { padding: 24px; max-width: 900px; margin: 0 auto; }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    .subtitle { color: var(--color-text-secondary); margin-bottom: 24px; }
+    h2 { font-size: 16px; margin: 24px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--color-border); }
+    .form-row { display: flex; align-items: center; margin-bottom: 12px; gap: 12px; }
+    .form-row label { width: 180px; color: var(--color-text-secondary); font-size: 13px; }
+    .form-row input, .form-row select { flex: 1; }
+    .form-row .hint { font-size: 12px; color: var(--color-text-disabled); margin-top: 2px; }
+    .form-stack { margin-bottom: 12px; }
+    .form-stack label { display: block; color: var(--color-text-secondary); font-size: 13px; margin-bottom: 4px; }
+    .actions { display: flex; gap: 8px; margin-top: 24px; }
+    .cookie-section {
+      background: #FFF7E8; border: 1px solid #FFE4BA; border-radius: 6px;
+      padding: 12px; margin-bottom: 16px; font-size: 13px; color: var(--color-text-secondary);
+    }
+    .cookie-section code { background: #F2F3F5; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+    /* 只读字段：自动读取，不允许用户编辑 */
+    .input[readonly] {
+      background: #F2F3F5; color: var(--color-text-secondary);
+      cursor: default;
+    }
+    .form-row .auto-hint {
+      font-size: 11px; color: var(--color-text-disabled); margin-left: 8px;
+    }
+    .workflow-editor { margin-bottom: 12px; }
+    .workflow-type {
+      border: 1px solid var(--color-border); border-radius: 6px; padding: 12px; margin-bottom: 12px;
+    }
+    .workflow-type h3 { font-size: 14px; margin-bottom: 8px; display: flex; justify-content: space-between; }
+    .workflow-step {
+      display: grid; grid-template-columns: 1fr 1fr 2fr auto; gap: 8px; margin-bottom: 6px;
+    }
+    .workflow-step input { font-size: 13px; padding: 4px 8px; }
+    .extra-holidays textarea { font-family: monospace; font-size: 12px; }
+
+    /* 北森状态卡片 */
+    .italent-status-card {
+      border: 1px solid var(--color-border); border-radius: 8px;
+      padding: 14px; margin-bottom: 16px; background: #FAFBFC;
+    }
+    .italent-status-row { display: flex; align-items: center; gap: 10px; }
+    .italent-status-row .status-dot {
+      width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+      background: var(--color-text-disabled);
+    }
+    .italent-status-row .status-dot.ok { background: var(--color-success); }
+    .italent-status-row .status-dot.err { background: var(--color-danger); }
+    .italent-status-row .italent-status-text { flex: 1; font-size: 13px; color: var(--color-text); }
+    .italent-detail {
+      margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--color-border);
+      font-size: 13px; color: var(--color-text-secondary); line-height: 1.8;
+    }
+    .italent-detail b { color: var(--color-text); }
+    .italent-login-tip {
+      margin-top: 10px; padding: 8px 10px; background: #FFF7E8;
+      border: 1px solid #FFE4BA; border-radius: 4px; font-size: 12px; color: var(--color-text-secondary);
+    }
+    .italent-login-tip a { color: var(--color-primary); }
+  </style>
+</head>
+<body>
+  <h1 data-i18n="optionsTitle">ONES Helper 配置</h1>
+  <p class="subtitle" data-i18n="optionsSubtitle">ONES Cookie 在浏览器登录后自动读取，无需在此手动填写。</p>
+
+  <h2 data-i18n="optionsSectionStatus">系统连接状态</h2>
+
+  <!-- ONES 状态卡片 -->
+  <div class="italent-status-card">
+    <div class="italent-status-row">
+      <span class="status-dot" id="onesStatusDot"></span>
+      <span class="italent-status-text" id="onesStatusText" data-i18n="popupStatusChecking">ONES：检查中...</span>
+      <button class="btn-secondary btn-sm" id="btnRecheckOnes" data-i18n="optionsItalentRecheck">重新检测</button>
+    </div>
+  </div>
+
+  <!-- 北森状态卡片 -->
+  <div class="italent-status-card" id="italentStatusCard">
+    <div class="italent-status-row">
+      <span class="status-dot" id="italentStatusDot"></span>
+      <span class="italent-status-text" id="italentStatusText" data-i18n="optionsItalentChecking">北森考勤：检测中...</span>
+      <button class="btn-secondary btn-sm" id="btnRecheckItalent" data-i18n="optionsItalentRecheck">重新检测</button>
+    </div>
+    <div class="italent-login-tip" id="italentLoginTip" style="display:none;" data-i18n="optionsItalentLoginTip">
+      请在浏览器中打开 <a href="https://www.italent.cn/portal/" target="_blank">www.italent.cn/portal</a> 并登录，然后回到此页点击"重新检测"。
+    </div>
+  </div>
+
+  <h2 data-i18n="optionsSectionBasic">参数配置</h2>
+  <div class="form-row">
+    <label data-i18n="optionsLabelDailyMax">每日加班上限 (h)</label>
+    <input class="input" id="overtime_daily_max" type="number" min="0" max="12" step="0.5" />
+  </div>
+  <div class="form-row">
+    <label data-i18n="optionsLabelStandardHours">标准在勤时长 (h)</label>
+    <input class="input" id="italent_standard_work_hours" type="number" min="1" max="24" step="0.5" />
+  </div>
+
+  <h2 data-i18n="optionsSectionHolidays">节假日补丁</h2>
+  <p class="subtitle" data-i18n="optionsHolidaysSubtitle">JSON 格式：自定义放假/补班日期</p>
+  <div class="form-stack extra-holidays">
+    <textarea class="textarea" id="extra_holidays" rows="6"></textarea>
+  </div>
+
+  <h2 data-i18n="optionsSectionWorkflow">状态流转工作流</h2>
+  <p class="subtitle" data-i18n="optionsWorkflowSubtitle">每个类型定义从开始到终态的状态序列。最后一步只需 status，作为终态。</p>
+  <div id="workflowEditor"></div>
+  <button class="btn-secondary btn-sm" id="btnAddType" style="margin-top:8px;" data-i18n="optionsBtnAddType">+ 添加工作项类型</button>
+
+  <div class="actions">
+    <button class="btn-primary" id="btnSave" data-i18n="optionsBtnSave">保存配置</button>
+    <button class="btn-secondary" id="btnReset" data-i18n="optionsBtnReset">重置为默认</button>
+    <button class="btn-ghost" id="btnExport" data-i18n="optionsBtnExport">导出 config.json</button>
+  </div>
+
+  <div id="toastContainer"></div>
+
+  <script type="module" src="src/options.js"></script>
+</body>
+</html>

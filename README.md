@@ -2,7 +2,12 @@
 
 ONES 工时自动计划与填写工具，适用于 `ones.reachauto.com`。
 
-此工具通过分析你负责的未完成任务和剩余预计工时，在当月工作日中自动、合理地分配工时，并支持一键提报与状态流转。**纯 Python 标准库实现，无任何第三方依赖。**
+提供两种使用方式：
+
+- **浏览器扩展（推荐）**：[extension/](./extension/) — Manifest V3 插件，自动读取浏览器登录态，独立面板完成工时规划与提交，**无需手动复制 Cookie**。
+- **命令行脚本**：`ones_timefiller.py` — 纯 Python 标准库实现，无任何第三方依赖，适合无浏览器环境或自动化场景。
+
+两者业务逻辑完全等价（工时分配算法、状态流转 workflow、节假日计算、北森考勤解析均 1:1 移植），`config.json` 格式兼容。
 
 ---
 
@@ -177,4 +182,18 @@ run.bat --manual
 
 *   **Python 版本**：Python 3.8+
 *   **第三方库**：**无**。仅使用 Python 自带的标准库（`urllib`, `json`, `datetime` 等），轻量且易于部署。
+
+---
+
+## 🧩 浏览器扩展版
+
+如果你不想手动复制 Cookie，推荐使用浏览器扩展版（[extension/](./extension/)）：
+
+- Chrome/Edge 安装：打开 `chrome://extensions/`（Edge 为 `edge://extensions/`）→ 打开「开发者模式」→「加载已解压的扩展程序」→ 选择 `extension/` 目录
+- 自动读取浏览器登录态（基于 `fetch` + `credentials: "include"`，不依赖 `chrome.cookies` API，VPN/隐私环境也可用）
+- 独立面板 6 步流程：获取数据 → 规划工时 → 预览分配 → 提交工时 → 状态流转 → 完成
+- 北森考勤：在浏览器中登录 [www.italent.cn/portal](https://www.italent.cn/portal) 后自动获取加班数据
+- 中英文双语，根据浏览器语言自动切换
+
+详细说明见 [extension/README.md](./extension/README.md)。
 

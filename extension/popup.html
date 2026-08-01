@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>ONES Helper</title>
+  <link rel="stylesheet" href="src/styles.css" />
+  <style>
+    body { width: 360px; padding: 12px; }
+    .header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .header h1 { font-size: 16px; font-weight: 600; }
+    .status-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px; border-radius: 6px; margin-bottom: 8px;
+      background: var(--color-bg-card); border: 1px solid var(--color-border);
+    }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--color-text-disabled);
+      flex-shrink: 0;
+    }
+    .status-dot.ok { background: var(--color-success); }
+    .status-dot.warn { background: var(--color-warning); }
+    .status-dot.err { background: var(--color-danger); }
+    .status-text { font-size: 13px; color: var(--color-text-secondary); flex: 1; min-width: 0; word-break: break-all; }
+    .btn-login {
+      padding: 3px 10px; font-size: 12px;
+      background: var(--color-primary); color: white;
+      border-radius: 4px; flex-shrink: 0; cursor: pointer; border: none;
+    }
+    .btn-login:hover { background: #0E4DD8; }
+    .btn-login:disabled { opacity: 0.6; cursor: not-allowed; }
+    .status-detail {
+      font-size: 11px; color: var(--color-text-disabled);
+      margin-top: 4px; padding: 4px 6px; background: var(--color-bg-page);
+      border-radius: 4px; word-break: break-all; white-space: pre-wrap;
+      max-height: 100px; overflow-y: auto;
+    }
+    .actions { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+    .actions button { width: 100%; padding: 10px; font-size: 14px; }
+    .footer {
+      margin-top: 12px;
+      display: flex; justify-content: space-between;
+      font-size: 12px; color: var(--color-text-disabled);
+    }
+    .footer a { color: var(--color-primary); text-decoration: none; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1 id="title" data-i18n="popupTitle">ONES Helper</h1>
+    <span class="tag" id="versionTag">v1.0.0</span>
+  </div>
+
+  <!-- ONES 状态 -->
+  <div class="status-block" id="statusBlock">
+    <div class="status-row">
+      <span class="status-dot" id="statusDot"></span>
+      <span class="status-text" id="statusText" data-i18n="popupStatusChecking">ONES：检查中...</span>
+      <button class="btn-login" id="btnSyncOnesTab" style="display:none; background:#722ED1; margin-right:4px;">同步凭证</button>
+      <button class="btn-login" id="btnLoginOnes" data-i18n="popupBtnLogin" style="display:none">登录</button>
+    </div>
+    <div class="status-detail" id="statusDetail" style="display:none"></div>
+  </div>
+
+  <!-- 北森状态 -->
+  <div class="status-block" id="italentStatusBlock">
+    <div class="status-row">
+      <span class="status-dot" id="italentDot"></span>
+      <span class="status-text" id="italentText" data-i18n="popupItalentChecking">北森考勤：检查中...</span>
+      <button class="btn-login" id="btnLoginItalent" data-i18n="popupBtnLogin" style="display:none">登录</button>
+    </div>
+    <div class="status-detail" id="italentDetail" style="display:none"></div>
+  </div>
+
+  <div class="actions">
+    <button class="btn-primary" id="btnDashboard" data-i18n="popupBtnDashboard">打开工时填写面板</button>
+    <button class="btn-secondary" id="btnRefresh" data-i18n="popupBtnRefresh">刷新认证状态</button>
+    <button class="btn-secondary" id="btnOptions" data-i18n="popupBtnOptions">配置选项</button>
+  </div>
+
+  <div class="footer">
+    <span id="monthLabel"></span>
+    <a id="linkOnes" target="_blank" data-i18n="popupVisitOnes">访问 ONES</a>
+  </div>
+
+  <script type="module" src="src/popup.js"></script>
+</body>
+</html>

@@ -897,14 +897,17 @@ def parse_italent_attendance(data, year, month, debug=False, cfg=None):
 
 # ─── 交互输入 ────────────────────────────────────────────────────────────────
 
-def input_hours(tasks, task_filled=None, capacity=0, total_filled=0, label=""):
+def input_hours(tasks, task_filled=None, capacity=0, total_filled=0, label="", planned_hours=None):
     """
-    task_filled : {task_uuid: hours}  本月各任务已填
-    capacity    : 月度总容量（小时）
-    total_filled: 本月已填总工时
-    每个任务默认值 = min(任务剩余预计工时, 月度剩余缺口)
+    task_filled  : {task_uuid: hours}  本月各任务已填
+    capacity     : 月度总容量（小时）
+    total_filled : 本月已填总工时
+    label        : 提示标签（如 "考勤加班"、"4h加班" 等）
+    planned_hours: {task_uuid: hours}  本次对话/规划中前面步骤已输入的工时（用于计算动态剩余预计）
+    每个任务默认值 = min(动态剩余预计工时, 月度剩余缺口)
     """
     tf            = task_filled or {}
+    ph            = planned_hours or {}
     month_remain  = max(0.0, capacity - total_filled)  # 月度还差多少
 
     # ── 先列出所有任务 ──────────────────────────────────────────
@@ -918,13 +921,14 @@ def input_hours(tasks, task_filled=None, capacity=0, total_filled=0, label=""):
         pname    = _truncate(t.get("_proj") or "", PW)
         tname    = _truncate(t.get("summary") or "", NW)
         sname    = _truncate(t.get("_status_name") or "", 10)
-        task_rem = t.get("_remaining", 0.0)
-        filed    = tf.get(t.get("uuid", ""), 0.0)
+        uuid     = t.get("uuid", "")
+        p_h      = ph.get(uuid, 0.0)
+        task_rem = max(0.0, t.get("_remaining", 0.0) - p_h)
+        filed    = tf.get(uuid, 0.0)
         rem_s    = f"{task_rem:.0f}h" if task_rem > 0 else "-"
         fil_s    = f"{filed:.1f}h"    if filed    > 0 else "-"
         print(f"  [{i+1:2d}]  {_ljust(pname,PW)}  {_ljust(tname,NW)}  {_ljust(sname,10)}  {_rjust(rem_s,8)}  {_rjust(fil_s,8)}")
     print("─" * 84)
-    _lbl = f"{label}工时" if label else "工时"
     avail_s = f"{month_remain:.1f}h" if month_remain > 0 else "已满"
     print(f"  {'可追加' if label else '月度剩余'}: {avail_s}  |  回车 = 任务剩余预计（不超上限）\n")
 
@@ -934,7 +938,8 @@ def input_hours(tasks, task_filled=None, capacity=0, total_filled=0, label=""):
         name     = t.get("_display") or t.get("summary", "未命名任务")
         uuid     = t.get("uuid", "")
         filed    = tf.get(uuid, 0.0)
-        task_rem = t.get("_remaining", 0.0)
+        p_h      = ph.get(uuid, 0.0)
+        task_rem = max(0.0, t.get("_remaining", 0.0) - p_h)
 
         # 有预计剩余工时 → 取 min(任务剩余, 月度缺口)
         # 无预计 → 默认 0（让用户自己填）
@@ -1638,15 +1643,23 @@ def main():
                     total_filled=total_filled,
                 )
 
-    overtime_daily   = cfg.get("overtime_daily_max", 4)
-    task_hours       = task_hours or {}
-    new_planned      = sum(v["hours"] for v in task_hours.values())
-    entries          = []
-    overtime_hours   = {}
-    overtime_entries = []
+    overtime_daily       = cfg.get("overtime_daily_max", 4)
+    task_hours           = task_hours or {}
+    new_planned          = sum(v["hours"] for v in task_hours.values())
+    entries              = []
+    overtime_hours       = {}
+    overtime_entries     = []
+    current_filled_hours = dict(filled_hours)
+    current_task_filled  = dict(_task_filled(filled_hours))
+    planned_so_far       = {}
 
     if new_planned > 0:
-        entries, _ = distribute(task_hours, wdays, filled_hours)
+        entries, _ = distribute(task_hours, wdays, current_filled_hours, daily_limit=8.0)
+        for e in entries:
+            d, u, h = e["date"], e["task_uuid"], e["hours"]
+            current_filled_hours[d] = current_filled_hours.get(d, 0.0) + h
+            current_task_filled[u]  = current_task_filled.get(u, 0.0) + h
+            planned_so_far[u]       = planned_so_far.get(u, 0.0) + h
 
     after_normal = total_filled + new_planned
 
@@ -1655,41 +1668,89 @@ def main():
         prefix = "\n月度容量已填满（{}h）".format(capacity) if new_planned > 0 else \
                  "\n月度容量已满（{}h），进入加班工时".format(capacity)
         print(prefix)
+
+        ot_att_hours   = {}
+        ot_att_entries = []
+        ot_att_planned = 0.0
+
+        # Step 1: 优先基于考勤系统实际记录填写
         if use_attendance_strategy:
             total_ot = sum(attendance_ot.values())
-            ans = input(f"追加加班工时？检测到考勤系统共计 {total_ot}h 加班 [Y/n]: ").strip().lower()
+            ans = input(f"追加考勤加班工时？检测到考勤系统共计 {total_ot:.1f}h 加班 [Y/n]: ").strip().lower()
             if ans not in ("n", "no"):
                 print(f"\n── 加班工时（考勤系统策略） ───────────────────────")
-                print(f"按考勤系统实际记录分配，本月共计 {total_ot}h")
-                overtime_hours = input_hours(
-                    tasks, task_filled=_task_filled(filled_hours),
+                print(f"按考勤系统实际记录分配，本月共计 {total_ot:.1f}h")
+                ot_att_hours = input_hours(
+                    tasks, task_filled=current_task_filled,
                     capacity=total_ot, total_filled=0,
-                    label="加班",
+                    label="考勤加班",
+                    planned_hours=planned_so_far,
                 )
-                if overtime_hours:
-                    for v in overtime_hours.values():
+                if ot_att_hours:
+                    for v in ot_att_hours.values():
                         v["is_overtime"] = True
-                    overtime_entries, _ = distribute(
-                        overtime_hours, wdays, filled_hours,
+                    ot_att_entries, _ = distribute(
+                        ot_att_hours, wdays, current_filled_hours,
                         daily_limit={d: 8.0 + attendance_ot.get(d, 0) for d in wdays},
                     )
-        else:
-            ans = input(f"追加加班工时？每天最多再加 {overtime_daily}h [y/N]: ").strip().lower()
+                    for e in ot_att_entries:
+                        d, u, h = e["date"], e["task_uuid"], e["hours"]
+                        current_filled_hours[d] = current_filled_hours.get(d, 0.0) + h
+                        current_task_filled[u]  = current_task_filled.get(u, 0.0) + h
+                        planned_so_far[u]       = planned_so_far.get(u, 0.0) + h
+                    ot_att_planned = sum(v["hours"] for v in ot_att_hours.values())
+            else:
+                print("  已跳过考勤加班策略")
+
+        # Step 2: 按 4h 逻辑计算剩余已开通加班额度，并询问继续补满
+        total_4h_capacity = len(wdays) * overtime_daily
+        remain_4h_cap     = max(0.0, total_4h_capacity - ot_att_planned)
+
+        ot_4h_hours   = {}
+        ot_4h_entries = []
+
+        if remain_4h_cap > 0.001:
+            if ot_att_planned > 0:
+                prompt_text = f"\n考勤加班已填 {ot_att_planned:.1f}h。按每天 {overtime_daily}h 逻辑，还可补满最多 {remain_4h_cap:.1f}h 加班，是否继续补充？[y/N]: "
+            elif use_attendance_strategy:
+                prompt_text = f"\n按每天最多 {overtime_daily}h 补充加班（全月最多 {remain_4h_cap:.1f}h），是否追加？[y/N]: "
+            else:
+                prompt_text = f"\n追加加班工时？每天最多再加 {overtime_daily}h [y/N]: "
+
+            ans = input(prompt_text).strip().lower()
             if ans == "y":
-                print(f"\n── 加班工时 ─────────────────────────────────────")
+                print(f"\n── 加班工时（每天上限 {overtime_daily}h 补满策略） ──────────")
                 print(f"叠加在每天 8h 之上，每天上限 {overtime_daily}h")
-                overtime_hours = input_hours(
-                    tasks, task_filled=_task_filled(filled_hours),
-                    capacity=len(wdays) * overtime_daily, total_filled=0,
-                    label="加班",
+                ot_4h_hours = input_hours(
+                    tasks, task_filled=current_task_filled,
+                    capacity=remain_4h_cap, total_filled=0,
+                    label="4h加班",
+                    planned_hours=planned_so_far,
                 )
-                if overtime_hours:
-                    for v in overtime_hours.values():
+                if ot_4h_hours:
+                    for v in ot_4h_hours.values():
                         v["is_overtime"] = True
-                    overtime_entries, _ = distribute(
-                        overtime_hours, wdays, filled_hours,
+                    ot_4h_entries, _ = distribute(
+                        ot_4h_hours, wdays, current_filled_hours,
                         daily_limit=8.0 + overtime_daily,
                     )
+                    for e in ot_4h_entries:
+                        d, u, h = e["date"], e["task_uuid"], e["hours"]
+                        current_filled_hours[d] = current_filled_hours.get(d, 0.0) + h
+                        current_task_filled[u]  = current_task_filled.get(u, 0.0) + h
+                        planned_so_far[u]       = planned_so_far.get(u, 0.0) + h
+
+        # 合并考勤加班与4h补充加班
+        overtime_hours = {}
+        for k, v in ot_att_hours.items():
+            overtime_hours[k] = dict(v)
+        for k, v in ot_4h_hours.items():
+            if k in overtime_hours:
+                overtime_hours[k]["hours"] += v["hours"]
+            else:
+                overtime_hours[k] = dict(v)
+
+        overtime_entries = ot_att_entries + ot_4h_entries
 
     api_entries = []
     ok_cnt      = 0
@@ -1755,11 +1816,12 @@ def main():
 
     if api_entries and ok_cnt > 0:
         filled_uuids  = {e["task_uuid"] for e in api_entries}
-        # 纳入候选：刚提交工时的任务 + 预计工时为0的任务（无需填工时，不受"是否提交"限制）
+        # 纳入候选：刚提交工时的任务 + 预计工时为0的任务 + 历史工时已填满的任务(无剩余工时)
         inprog_filled = [t for t in tasks
                          if _is_stage2_candidate(t)
                          and (t["uuid"] in filled_uuids
-                              or t.get("_estimated", 0.0) <= 0)]
+                              or t.get("_estimated", 0.0) <= 0
+                              or t.get("_actual", 0.0) >= t.get("_estimated", 0.0) - 0.1)]
     else:
         inprog_filled = [t for t in tasks if _is_stage2_candidate(t)]
     if inprog_filled:
