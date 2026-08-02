@@ -22,9 +22,10 @@ The extension operates on `ones.reachauto.com` and `cloud.italent.cn` / `www.ita
 ## 3. Permissions and why each is required
 
 - **`cookies`** — Reads your existing ONES login session cookies (`ones-lt`, `ones-ids-sid`, `ones-uid`) on `ones.reachauto.com` so the extension can call ONES APIs on your behalf. Without these cookies, the API returns 401 Unauthorized. The cookies are never read by, or sent to, any party other than `ones.reachauto.com`.
-- **`storage`** — Saves user configuration (workflow definitions, holiday patches, Beisen cookie, etc.) in `chrome.storage.local`. The extension does not sync this data to any cloud account.
+- **`storage`** — Saves user configuration (workflow definitions, holiday patches, Beisen cookie, cached user name, etc.) in `chrome.storage.local`. The extension does not sync this data to any cloud account.
 - **`alarms`** — Schedules a periodic check (every 30 minutes) to detect ONES token expiration and attempt auto-refresh before it expires, so the user does not have to re-login manually.
-- **`notifications`** — Shows a desktop notification when the token has been auto-refreshed, to keep the user informed. No analytics or tracking data is sent.
+- **`activeTab`** — Reads the URL of the active tab when navigating `ones.reachauto.com` to automatically extract the ONES `team_uuid` parameter from the address bar, saving manual configuration effort.
+- **`scripting`** — Reserved for executing helper scripts in the active tab context when DOM elements or session variables need to be inspected directly.
 - **Host permission `https://ones.reachauto.com/*`** — Required to (1) read the ONES session cookies, (2) call the ONES GraphQL / OQL / status transition APIs, and (3) submit work hours via `addManhour` mutation.
 - **Host permissions `https://cloud.italent.cn/*` and `https://www.italent.cn/*`** — Required to call the Beisen attendance API to fetch overtime hours data (only active when the user has manually configured the Italent cookie in Options).
 
