@@ -330,8 +330,9 @@ export function calcDefaultHours(tasks, taskFilled, capacity, totalFilled) {
     const filed = taskFilled[t.uuid] || 0;
     const taskRem = t._remaining || 0;
     let defaultH = 0;
-    if (taskRem > 0) {
-      defaultH = Math.round(Math.min(taskRem, monthRem) * 10) / 10;
+    if (taskRem > 0 && monthRemain > 0) {
+      defaultH = Math.round(Math.min(taskRem, monthRemain) * 10) / 10;
+      monthRemain = Math.max(0, monthRemain - defaultH);
     }
     result[t.uuid] = { name: t._display || t.summary, uuid: t.uuid, hours: defaultH, filed, taskRem };
   }

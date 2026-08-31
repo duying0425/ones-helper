@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """ONES 工时自动填写工具（无需第三方依赖）"""
 
-__version__ = "1.1.0"
+__version__ = "1.1.4"
 
 import sys, io
 if sys.stdout.encoding and sys.stdout.encoding.upper() not in ("UTF-8", "UTF8"):
@@ -32,10 +32,52 @@ else:
 _USER_CFG_DIR = Path.home() / ".ones-helper"
 _USER_CFG_FILE = _USER_CFG_DIR / "config.json"
 _APP_CFG_FILE  = _APP_DIR / "config.json"
-# 实际使用的 config.json 路径：用户目录优先，不存在则用程序目录
-CONFIG_FILE = _USER_CFG_FILE if _USER_CFG_FILE.exists() else _APP_CFG_FILE
-# 写入时使用的路径（统一写入用户目录，不存在则创建）
+# 写入时统一使用用户目录 ~/.ones-helper/config.json
 CONFIG_WRITE_FILE = _USER_CFG_FILE
+
+DEFAULT_CONFIG = {
+    "user_id": "",
+    "auth_token": "",
+    "team_uuid": "SpBJdKsD",
+    "org_uuid": "6ZKXo9yg",
+    "session_id": "",
+    "italent_cookie": "",
+    "italent_user_id": "",
+    "italent_user_text": "",
+    "italent_vid": "",
+    "italent_quark_s": "",
+    "italent_standard_work_hours": 9,
+    "italent_api_url": "https://cloud.italent.cn/api/v2/UI/TableList?viewName=Attendance.SingleObjectListView.EmpAttendanceDataList&metaObjName=Attendance.AttendanceStatistics&app=Attendance&PaaS-SourceApp=Attendance&PaaS-CurrentView=Attendance.AttendanceDataRecordNavView&frontendVersion=2025121900&shadow_context=%7BappModel%3A%22italent%22%2Cuppid%3A%221%22%7D&_qsrcapp=attendance",
+    "overtime_daily_max": 4,
+    "extra_holidays": {
+        "off": [],
+        "on": [],
+        "remove_off": [],
+        "remove_on": []
+    },
+    "workflow": {
+        "任务": [
+            {"status": "未开始", "button": "开始任务"},
+            {"status": "进行中", "button": "完成任务", "comment": "已经完成啦"},
+            {"status": "已完成"}
+        ],
+        "工作任务": [
+            {"status": "未开始",     "button": "开始任务"},
+            {"status": "进行中",     "button": "完成审核中", "comment": "已经完成啦"},
+            {"status": "完成审核中", "button": "已完成", "comment": "已经完成啦"},
+            {"status": "已完成"}
+        ]
+    }
+}
+
+
+def get_config_file():
+    """获取当前生效的配置文件路径：优先 ~/.ones-helper/config.json，其次程序目录 config.json"""
+    if _USER_CFG_FILE.exists():
+        return _USER_CFG_FILE
+    if _APP_CFG_FILE.exists():
+        return _APP_CFG_FILE
+    return None
 
 BASE_URL     = "https://ones.reachauto.com/project/api/project"   # GraphQL 用
 OQL_BASE     = "https://ones.reachauto.com/project/api/ones-project"  # OQL 用
@@ -99,18 +141,18 @@ def _try_refresh_token(cfg):
 
 
 def _save_config(updates):
-    """统一写配置：读取当前 config.json，合并 updates 字段，写入用户目录。
+    """统一写配置：读取当前配置文件，合并 updates 字段，写入用户目录 ~/.ones-helper/config.json。
     自动创建用户配置目录。失败时静默忽略。
     """
     try:
-        if CONFIG_FILE.exists():
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                raw = json.load(f)
-        else:
-            raw = {}
+        cfg_file = get_config_file()
+        raw = dict(DEFAULT_CONFIG)
+        if cfg_file and cfg_file.exists():
+            with open(cfg_file, "r", encoding="utf-8") as f:
+                raw.update(json.load(f))
         raw.update(updates)
-        CONFIG_WRITE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(CONFIG_WRITE_FILE, "w", encoding="utf-8") as f:
+        _USER_CFG_DIR.mkdir(parents=True, exist_ok=True)
+        with open(_USER_CFG_FILE, "w", encoding="utf-8") as f:
             json.dump(raw, f, ensure_ascii=False, indent=2)
         return True
     except Exception:
@@ -118,10 +160,11 @@ def _save_config(updates):
 
 
 def load_config():
-    if not CONFIG_FILE.exists():
+    cfg_file = get_config_file()
+    if not cfg_file:
         print("\n⚠  找不到 config.json")
         print(f"\n查找位置：")
-        print(f"  1. {CONFIG_WRITE_FILE} （用户目录，推荐）")
+        print(f"  1. {_USER_CFG_FILE} （用户目录，推荐）")
         print(f"  2. {_APP_CFG_FILE} （程序目录）")
         print("\n获取方法: 浏览器 F12 → Application → Cookies → ones.reachauto.com")
         print("  需要: ones-lt (auth_token), ones-ids-sid (session_id)\n")
@@ -153,32 +196,23 @@ def load_config():
             print("\n✗ auth_token 和 user_id 为必填项，无法创建配置文件")
             sys.exit(1)
 
-        new_cfg = {
+        new_updates = {
             "user_id":    user_id,
             "auth_token": auth_token,
             "team_uuid":  team_uuid,
             "session_id": session_id,
-            "workflow": {
-                "任务": [
-                    {"status": "未开始", "button": "开始任务"},
-                    {"status": "进行中", "button": "完成任务", "comment": "已经完成啦"},
-                    {"status": "已完成"}
-                ],
-                "工作任务": [
-                    {"status": "未开始",     "button": "开始任务"},
-                    {"status": "进行中",     "button": "完成审核中", "comment": "已经完成啦"},
-                    {"status": "完成审核中", "button": "已完成", "comment": "已经完成啦"},
-                    {"status": "已完成"}
-                ]
-            },
         }
-        with open(CONFIG_WRITE_FILE, "w", encoding="utf-8") as f:
-            json.dump(new_cfg, f, ensure_ascii=False, indent=2)
-        print(f"\n✓ 已创建 {CONFIG_WRITE_FILE}\n")
-        return new_cfg
+        if _save_config(new_updates):
+            print(f"\n✓ 已创建 {_USER_CFG_FILE}\n")
+        else:
+            print(f"\n✗ 创建配置文件失败，请检查写入权限：{_USER_CFG_FILE}\n")
+            sys.exit(1)
+        cfg_file = _USER_CFG_FILE
 
-    with open(CONFIG_FILE, encoding="utf-8") as f:
-        cfg = json.load(f)
+    cfg = dict(DEFAULT_CONFIG)
+    with open(cfg_file, encoding="utf-8") as f:
+        cfg.update(json.load(f))
+
     if "cookie_string" in cfg:
         uid, lt = _parse_cookie(cfg["cookie_string"])
         if uid and lt:
@@ -205,8 +239,6 @@ def load_config():
                 cfg["auth_token"] = new_token
                 if _save_config({"auth_token": new_token}):
                     print("  ✓ Token 已更新\n")
-                else:
-                    print("  ✗ 保存配置失败\n")
             else:
                 print("  跳过，继续运行（部分功能可能失败）\n")
 
@@ -348,7 +380,7 @@ _HOLIDAYS = {
 }
 
 
-def _holiday_sets(year, cfg):
+def _holiday_sets(year, cfg=None):
     """合并内置节假日 + config.json 中的自定义节假日，返回 (off_set, on_set)"""
     base = _HOLIDAYS.get(year, {"off": set(), "on": set()})
     off  = set(base["off"])
@@ -1030,7 +1062,7 @@ def distribute(task_hours, wdays, filled_hours, daily_limit=8.0):
         if avail > 0.001:
             remaining[d] = avail
 
-    open_days = sorted(remaining.keys())
+    open_days = [d for d in wdays if d in remaining]
     entries   = []
     day_idx   = 0
 
@@ -1730,8 +1762,14 @@ def main():
                 if ot_4h_hours:
                     for v in ot_4h_hours.values():
                         v["is_overtime"] = True
+                    # 优先在无考勤加班（纯 8h）的日期上追加补充加班，超出后再补在已有考勤加班的日期上
+                    if attendance_ot:
+                        wdays_prioritized = [d for d in wdays if attendance_ot.get(d, 0) == 0] + \
+                                            [d for d in wdays if attendance_ot.get(d, 0) > 0]
+                    else:
+                        wdays_prioritized = wdays
                     ot_4h_entries, _ = distribute(
-                        ot_4h_hours, wdays, current_filled_hours,
+                        ot_4h_hours, wdays_prioritized, current_filled_hours,
                         daily_limit=8.0 + overtime_daily,
                     )
                     for e in ot_4h_entries:
@@ -1751,6 +1789,7 @@ def main():
                 overtime_hours[k] = dict(v)
 
         overtime_entries = ot_att_entries + ot_4h_entries
+        overtime_entries.sort(key=lambda e: e["date"])
 
     api_entries = []
     ok_cnt      = 0
@@ -1759,6 +1798,7 @@ def main():
         print("\n未输入工时，跳过提交")
     else:
         all_entries = entries + overtime_entries
+        all_entries.sort(key=lambda e: e["date"])
         ot_planned  = sum(v["hours"] for v in overtime_hours.values())
 
         # ── 分配预览 ──────────────────────────────────────────────
@@ -1787,14 +1827,21 @@ def main():
                 # ── 提交工时 ──────────────────────────────────────
                 print()
                 fail_cnt = 0
+                task_map = {t.get("uuid"): t for t in tasks}
                 for e in api_entries:
                     ot_tag  = " [加班]" if e.get("is_overtime") else ""
                     success, msg = submit_entry(cfg, team_uuid, e, debug=args.debug)
                     mark = "✓" if success else "✗"
                     tail = f"  {msg}" if msg and not success else ""
                     print(f"  {mark} {e['date']}  {e['hours']:4.1f}h{ot_tag}  {e['task_name'][:40]}{tail}")
-                    if success: ok_cnt += 1
-                    else:       fail_cnt += 1
+                    if success:
+                        ok_cnt += 1
+                        t = task_map.get(e.get("task_uuid"))
+                        if t:
+                            t["_actual"] = round(t.get("_actual", 0.0) + e["hours"], 2)
+                            t["_remaining"] = max(0.0, round(t.get("_remaining", 0.0) - e["hours"], 2))
+                    else:
+                        fail_cnt += 1
                 print(f"\n提交完成：成功 {ok_cnt} 条，失败 {fail_cnt} 条")
 
     if args.manual:
@@ -1811,8 +1858,7 @@ def main():
         return ("进行中" in (t.get("_status_name") or "")
                 and t.get("_category") == "in_progress"
                 and _find_step(cfg, t) is not None
-                and _eligible_for_update(t, year, month,
-                                         submitted_by_task.get(t.get("uuid", ""), 0.0)))
+                and _eligible_for_update(t, year, month))
 
     if api_entries and ok_cnt > 0:
         filled_uuids  = {e["task_uuid"] for e in api_entries}

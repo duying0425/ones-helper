@@ -60,13 +60,17 @@ export function findStep(cfg, task) {
 
 // 判断当前任务是否处于该类型 workflow 的最后一步
 export function isLastStep(cfg, task) {
-  if (!task._issue_type) return false;
+  if (!task || !task._issue_type) return false;
   const wf = parseWorkflow(cfg);
   if (!wf) return false;
   const steps = wf[task._issue_type];
-  if (!steps) return false;
+  if (!steps || !steps.length) return false;
   const step = findStep(cfg, task);
-  return step !== null && step === steps[steps.length - 1];
+  if (!step) return false;
+  const last = steps[steps.length - 1];
+  return step.from_status === last.from_status &&
+         step.to_status === last.to_status &&
+         step.button === last.button;
 }
 
 // 月度已满时的补充检查：任务当月结束且仍有剩余预估工时

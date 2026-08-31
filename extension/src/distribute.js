@@ -16,7 +16,7 @@ export function distribute(taskHours, wdays, filledHours, dailyLimit = 8.0) {
     if (avail > 0.001) remaining[d] = avail;
   }
 
-  const openDays = Object.keys(remaining).sort();
+  const openDays = wdays.filter(d => Object.prototype.hasOwnProperty.call(remaining, d));
   const entries = [];
   let dayIdx = 0;
 

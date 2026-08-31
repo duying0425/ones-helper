@@ -220,41 +220,67 @@ https://github.com/duying0425/ones-helper/blob/master/store/PRIVACY.md
 
 ## Notes for Certification / 给审核人员的备注
 
-**English**:
+**English** (under 2000 chars, fits the "Notes for Certification" input):
 ```text
-This extension plans and submits work hours to the ONES project management platform, and transitions task statuses.
+This extension submits work hours to ONES, a generic project-management system deployed as separate private instances per enterprise. The developer is only an end-user of one instance (https://ones.reachauto.com), not the platform operator.
 
-Test steps:
-1. Log in to https://ones.reachauto.com in the browser.
-2. Click the extension toolbar icon. The popup should show "Logged in" status.
-3. Click "Open Hours Panel" to open the dashboard in a new tab.
-4. Select a month, the dashboard auto-loads tasks and filled hours.
-5. Adjust hours per task, click "Next" through the 6-step flow.
-6. Hours are submitted to ONES and task statuses transitioned.
+Why test credentials cannot be provided (Policy 1.3.1):
+1. No admin authority — the developer cannot create or issue ONES accounts; provisioning is controlled by each enterprise tenant's ONES admin.
+2. Account = tenant data exposure — an ONES account is bound to a company. Logging in exposes that company's private project data (tasks, members, work hours). Sharing a personal account would leak employer confidential data and violate company security policy.
+3. Generic multi-tenant system — ONES is deployed by many companies; the extension works against whichever instance the user is already logged into. There is no "official" test tenant the developer may distribute.
 
-Features in v1.0.11:
-- Auto-reads browser cookies via fetch + credentials: include (works in VPN/privacy mode).
-- 6-step standalone dashboard with calendar preview.
-- Three-stage task status transition (To-Do → In-Progress → Done).
-- Bilingual (English & Simplified Chinese) UI.
-- Optional Beisen attendance integration for overtime hours.
-- Popup displays real user name (not UUID) via ONES GraphQL currentUser.
-- Login status reflected via extension icon badge (no desktop notifications).
+Alternative verification:
+- Source code (audit all network calls, permissions, data flows): https://github.com/duying0425/ones-helper
+- No hardcoded credentials — the extension only reads the browser's existing ONES session via fetch + credentials:"include". No embedded account, no background auth, no telemetry.
+- Logged-out behavior (verifiable without any account): install the extension; the icon shows a red "!" badge, popup shows "Not logged in", dashboard shows an empty state (see background.js updateBadge, popup.js, dashboard.js loadAll).
+- 6-step UI flow statically readable in extension/src/dashboard.js and engine.js.
+
+Test steps (require an ONES account from that tenant's admin):
+1. Log in to https://ones.reachauto.com.
+2. Click the toolbar icon → popup shows "Logged in".
+3. Click "Open Hours Panel" → dashboard loads tasks.
+4. Select month, adjust hours, click "Next" through the 6-step flow.
+5. Hours submitted, task statuses transitioned.
+
+If the reviewer has no ONES tenant access, please rely on source-code review and the logged-out behavior above.
 ```
 
 **Chinese (Simplified)**:
 ```text
 本扩展用于向 ONES 项目管理平台提交工时，并流转任务状态。
 
-测试步骤：
-1. 在浏览器中登录 https://ones.reachauto.com。
+== 无法提供测试账号的说明（对应政策 1.3.1） ==
+ONES 是一套通用的、商业化部署的项目管理系统（https://ones.cn），由各家企业客户各自部署为独立运营的私有实例。本扩展开发者只是其中一个实例 https://ones.reachauto.com 的最终使用方，并非 ONES 平台的运营方。
+因此无法提供测试账号，原因如下：
+  1. 开发者对该 ONES 实例无任何管理权限，无法创建、重置或发放任何账号。账号发放由各企业客户的 ONES 管理员控制。
+  2. ONES 账号均绑定具体企业租户，登录后会看到该公司的私有项目数据（任务、成员、工时记录等）。将个人账号共享给审核员会泄露雇主机密业务数据，违反公司信息安全政策。
+  3. ONES 是通用系统，由多家不同公司分别部署；扩展在哪个 ONES 实例上工作，完全取决于用户当前已登录哪个实例。开发者无权对外分发任何"官方"测试租户。
+综上，提供测试账号将泄露第三方（雇主）机密数据，且开发者无权这么做。
+
+== 审核员可替代验证方式 ==
+1. 扩展源代码已开源，可供审计：
+   https://github.com/duying0425/ones-helper
+   审核员可直接在仓库中检查所有网络请求、权限使用与数据流向。
+2. 扩展不含任何硬编码账号，仅读取浏览器中已有的 ONES 登录态（基于 fetch + credentials: "include"）。无内嵌凭据、无后台认证、无隐藏遥测。
+3. 在未登录 ONES 的情况下，扩展会安全进入"未登录"状态：
+   • 扩展图标显示红色 "!" badge（见 background.js `updateBadge`）。
+   • 弹窗显示"未登录"状态并提供"登录 ONES"按钮（见 popup.js）。
+   • 面板显示空状态提示："未登录，请先在浏览器中登录 ones.reachauto.com"（见 dashboard.js `loadAll`）。
+   background service worker 启动时会向 https://ones.reachauto.com/project/ 发送一次轻量 GET 请求（仅携带浏览器已为该域名保存的 Cookie，不发送任何额外凭据），仅用于更新图标 badge；在用户打开面板前不会调用任何业务 API。
+   审核员可直接安装扩展、打开弹窗，验证该优雅降级行为，无需任何账号。
+4. 6 步流程（获取数据 → 规划工时 → 预览分配 → 提交 → 状态流转 → 完成）可通过阅读 extension/src/dashboard.js 与 extension/src/engine.js 源码静态验证。
+
+== 测试步骤（需要 ones.reachauto.com 的有效登录态） ==
+1. 在浏览器中登录 https://ones.reachauto.com（审核员需持有该企业租户 ONES 管理员发放的账号）。
 2. 点击插件工具栏图标，弹窗应显示"已登录"状态（含用户姓名）。
 3. 点击"打开工时填写面板"在新标签页打开 dashboard。
 4. 选择月份，面板自动加载任务和已填工时。
 5. 调整每个任务的工时，点击"下一步"走完 6 步流程。
 6. 工时自动提交到 ONES，任务状态自动流转。
 
-v1.0.11 功能：
+若审核员无任何 ONES 租户访问权限，请以上述"源码审计（第 1 项）"与"未登录态行为（第 3 项）"作为认证依据。
+
+v1.1.0 功能：
 - 基于 fetch + credentials: include 自动带 Cookie（VPN/隐私环境也可用）。
 - 独立面板 6 步流程，含日历预览。
 - 三阶段任务状态流转（未开始 → 进行中 → 已完成）。
@@ -278,5 +304,8 @@ Productivity / 生产力
 
 | Version | Date | Status | Highlights |
 |---|---|---|---|
-| 1.0.0 | 2026-07-31 | Ready for submission | Initial release: auto cookie reading, 6-step dashboard, workflow transitions, bilingual i18n |
-| 1.0.11 | 2026-07-31 | Ready for submission | Switch to fetch + credentials: include (VPN-compatible), remove notifications permission, add user name display via GraphQL currentUser, badge-based login status |
+| 1.0.0 | 2026-07-31 | Published | Initial release: auto cookie reading, 6-step dashboard, workflow transitions, bilingual i18n |
+| 1.1.0 | 2026-08-20 | Published | Switch to fetch + credentials: include (VPN-compatible), remove notifications permission, add user name display via GraphQL currentUser, badge-based login status |
+| 1.1.1 | 2026-08-26 | Published | Fix calcDefaultHours variable reference in dashboard, fix isLastStep comparison, add comprehensive unit test suite (102 tests) |
+| 1.1.2 | 2026-08-28 | Published | Add standalone version endpoint and multi-extension hub deployment |
+| 1.1.3 | 2026-08-31 | Ready for submission | Fix Step 4 button submitting lock bug, improve submission logs presentation and workflow transition UX, auto reload upon month change |

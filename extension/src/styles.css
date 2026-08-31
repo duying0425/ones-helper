@@ -284,3 +284,25 @@ button:disabled {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #C9CDD4; border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #86909C; }
+
+/* === 更新通知条 === */
+.update-banner {
+  background: #E8F3FF;
+  border: 1px solid #BEDAFF;
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--color-text);
+  animation: fadeIn 0.3s ease;
+}
+@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+.update-banner .update-icon { font-size: 18px; flex-shrink: 0; }
+.update-banner .update-content { flex: 1; min-width: 0; }
+.update-banner .update-title { font-weight: 600; color: var(--color-primary); display: flex; align-items: center; gap: 6px; }
+.update-banner .update-changelog { font-size: 12px; color: var(--color-text-secondary); margin-top: 2px; }
+.update-banner .update-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+

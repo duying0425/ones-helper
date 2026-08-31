@@ -160,6 +160,12 @@ async function runTests() {
   // 2025-10 有国庆长假，工作日较少
   assert(wdays2025_10.length < 21, "2025-10 因国庆应工作日较少");
 
+  // 2026 节假日与无内置配置年份兜底
+  assert(holidaysSandbox.HOLIDAYS && holidaysSandbox.HOLIDAYS[2026], "HOLIDAYS[2026] 应存在");
+  assert(holidaysSandbox.HOLIDAYS[2026].off.has("2026-01-01"), "2026 元旦应为假日 off");
+  const wdays2030_1 = holidaysSandbox.workingDays(2030, 1, {});
+  assert(wdays2030_1.length > 0, "未来无预设节假日的年份应正常排除周末返回工作日");
+
   // --- distribute.js ---
   console.log("\n[distribute.js]");
   const distSandbox = createSandbox();
@@ -224,6 +230,56 @@ async function runTests() {
   assertEqual(r5.entries.length, 1, "工作日不足也应部分分配");
   assertEqual(r5.entries[0].hours, 8, "只分配 8h");
 
+  // 空工时输入
+  const rEmpty = distSandbox.distribute({}, ["2025-03-03"], {}, 8.0);
+  assertEqual(rEmpty.entries.length, 0, "空任务工时应返回 0 条分配");
+
+  // 加班标记与自定义对象上限
+  const rOt = distSandbox.distribute(
+    { ot1: { name: "OT Task", uuid: "ot1", hours: 6, is_overtime: true } },
+    ["2025-03-03", "2025-03-04"],
+    {},
+    { "2025-03-03": 12.0, "2025-03-04": 8.0 }
+  );
+  assertEqual(rOt.entries.length, 1, "加班工时分配条数");
+  assertEqual(rOt.entries[0].is_overtime, true, "加班标记应正确传递");
+  assertEqual(rOt.entries[0].hours, 6, "按当天上限 12h 应全部分配在第一天");
+
+  // 考勤加班后补充加班优先填入纯 8h 日期 (1/5/4/4/2 场景)
+  const wdays5 = ["2025-03-03", "2025-03-04", "2025-03-05", "2025-03-06", "2025-03-07"];
+  const otMap5 = { "2025-03-03": 1.0, "2025-03-04": 5.0 };
+  const currentFilled5 = { "2025-03-03": 8, "2025-03-04": 8, "2025-03-05": 8, "2025-03-06": 8, "2025-03-07": 8 };
+
+  // 阶段 1：考勤分配 6h
+  const attLimit5 = {};
+  for (const d of wdays5) attLimit5[d] = 8.0 + (otMap5[d] || 0);
+  const rPhase1 = distSandbox.distribute(
+    { t1: { name: "T1", uuid: "t1", hours: 6, is_overtime: true } },
+    wdays5, currentFilled5, attLimit5
+  );
+  for (const e of rPhase1.entries) currentFilled5[e.date] += e.hours;
+
+  // 阶段 2：追加 10h 补充加班
+  const prioritizedWdays5 = [
+    ...wdays5.filter(d => !otMap5[d]),
+    ...wdays5.filter(d => !!otMap5[d])
+  ];
+  const rPhase2 = distSandbox.distribute(
+    { t1: { name: "T1", uuid: "t1", hours: 10, is_overtime: true } },
+    prioritizedWdays5, currentFilled5, 12.0
+  );
+  for (const e of rPhase2.entries) currentFilled5[e.date] += e.hours;
+
+  const allOtEntries = [...rPhase1.entries, ...rPhase2.entries].sort((a, b) => a.date.localeCompare(b.date));
+  const otByDate = {};
+  for (const e of allOtEntries) otByDate[e.date] = (otByDate[e.date] || 0) + e.hours;
+
+  assertEqual(otByDate["2025-03-03"], 1, "1号考勤加班保持 1h");
+  assertEqual(otByDate["2025-03-04"], 5, "2号考勤加班保持 5h");
+  assertEqual(otByDate["2025-03-05"], 4, "3号纯工作日分配 4h 加班");
+  assertEqual(otByDate["2025-03-06"], 4, "4号纯工作日分配 4h 加班");
+  assertEqual(otByDate["2025-03-07"], 2, "5号纯工作日分配 2h 加班");
+
   // --- workflow.js ---
   console.log("\n[workflow.js]");
   const wfSandbox = createSandbox();
@@ -272,6 +328,18 @@ async function runTests() {
   assert(wfSandbox.eligibleForUpdate(
     { _plan_end: todayStr, _estimated: 8, _actual: 8 }, new Date().getFullYear(), new Date().getMonth() + 1
   ), "今日结束且工时填满应可流转");
+
+  // isLastStep 判断
+  assert(wfSandbox.isLastStep({}, { _issue_type: "任务", _status_name: "进行中" }), "进行中应是'任务'的最后一步流转");
+  assert(!wfSandbox.isLastStep({}, { _issue_type: "任务", _status_name: "未开始" }), "未开始不是'任务'的最后一步");
+
+  // eligibleForMonthFullClose
+  assert(wfSandbox.eligibleForMonthFullClose(
+    { _plan_end: todayStr, _remaining: 5 }, new Date().getFullYear(), new Date().getMonth() + 1
+  ), "当月结束且剩余预计 > 0 的任务在月度满时应满足 eligibleForMonthFullClose");
+  assert(!wfSandbox.eligibleForMonthFullClose(
+    { _plan_end: todayStr, _remaining: 0 }, new Date().getFullYear(), new Date().getMonth() + 1
+  ), "无剩余预计的任务不应触发 eligibleForMonthFullClose");
 
   // --- config.js ---
   console.log("\n[config.js]");
@@ -365,6 +433,22 @@ async function runTests() {
   assertEqual(ot["2025-03-16"], 6, "公休日 6h 应全部算加班");
   assert(!ot["2025-03-17"], "工作日 9h 无加班");
 
+  // parseItalentAttendance 兼容旧版 pageList
+  const legacyAttendance = {
+    pageList: [
+      { SwipingCardDate: "2025-03-20", WorkPeriod: "10.0", DateType: "工作日" }
+    ]
+  };
+  const otLegacy = apiSandbox.parseItalentAttendance(legacyAttendance, 2025, 3, false, { italent_standard_work_hours: 9 });
+  assertEqual(otLegacy["2025-03-20"], 1, "兼容 pageList 格式考勤解析 (10h-9h=1h)");
+
+  // pickTransition with last=true
+  const multiTransitions = [
+    { name: "流转", uuid: "tr_first" },
+    { name: "流转", uuid: "tr_last" }
+  ];
+  assertEqual(apiSandbox.pickTransition(multiTransitions, "流转", "", null, true).uuid, "tr_last", "last=true 应选取最后一个匹配流转");
+
   // readItalentCookies 从 chrome mock 读取
   apiSandbox.chrome._setCookies([
     { name: "session", value: "italent-session-abc", domain: "cloud.italent.cn" },
@@ -400,6 +484,83 @@ async function runTests() {
   // 移除 chrome.i18n 测试 fallback
   delete i18nSandbox.chrome.i18n;
   assertEqual(i18nSandbox.t("extName", "fallback"), "fallback", "t() 无 chrome.i18n 时应返回 fallback");
+
+  // --- engine.js ---
+  console.log("\n[engine.js]");
+  const engineSandbox = createSandbox();
+  engineSandbox.distribute = distSandbox.distribute;
+  engineSandbox.workingDays = holidaysSandbox.workingDays;
+  engineSandbox.findStep = wfSandbox.findStep;
+  engineSandbox.eligibleForUpdate = wfSandbox.eligibleForUpdate;
+  engineSandbox.eligibleForMonthFullClose = wfSandbox.eligibleForMonthFullClose;
+  engineSandbox.loadConfig = cfgSandbox.loadConfig;
+  engineSandbox.saveConfig = cfgSandbox.saveConfig;
+  vm.runInContext(loadSource(path.join(SRC_DIR, "engine.js")), engineSandbox);
+
+  // 1. 基础默认工时分配
+  const t1 = { uuid: "t1", summary: "Task 1", _remaining: 10 };
+  const t2 = { uuid: "t2", summary: "Task 2", _remaining: 15 };
+  const defHours = engineSandbox.calcDefaultHours([t1, t2], {}, 20, 0);
+  assertEqual(defHours["t1"].hours, 10, "Task 1 应分配 10h");
+  assertEqual(defHours["t2"].hours, 10, "Task 2 剩余额度仅剩 10h，应分配 10h (总额不超过容量)");
+
+  // 2. 容量已满场景（totalFilled >= capacity）
+  const defHoursFull = engineSandbox.calcDefaultHours([t1, t2], {}, 160, 160);
+  assertEqual(defHoursFull["t1"].hours, 0, "月度已满时 Task 1 默认工时应为 0");
+  assertEqual(defHoursFull["t2"].hours, 0, "月度已满时 Task 2 默认工时应为 0");
+
+  // 3. 任务剩余工时为 0 / 无预计工时场景
+  const tZero = { uuid: "t0", summary: "Zero Rem Task", _remaining: 0 };
+  const defHoursZero = engineSandbox.calcDefaultHours([tZero], {}, 160, 0);
+  assertEqual(defHoursZero["t0"].hours, 0, "剩余预计为 0 的任务默认工时应为 0");
+
+  // 4. 小数工时四舍五入与已填工时保留
+  const tDec1 = { uuid: "td1", summary: "Dec 1", _remaining: 7.5 };
+  const tDec2 = { uuid: "td2", summary: "Dec 2", _remaining: 4.5 };
+  const defHoursDec = engineSandbox.calcDefaultHours([tDec1, tDec2], { td1: 16.0 }, 160, 16.0);
+  assertEqual(defHoursDec["td1"].hours, 7.5, "小数工时应正确保留一位小数");
+  assertEqual(defHoursDec["td1"].filed, 16.0, "已填工时字段应正确保留");
+  assertEqual(defHoursDec["td2"].hours, 4.5, "第二个任务小数工时应为 4.5");
+
+  // 5. 阶段2 候选筛选（filterStage2CandidatesAsync）
+  const curMonth = new Date().getMonth() + 1;
+  const curYear = new Date().getFullYear();
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const sampleTasks = [
+    { uuid: "s1", summary: "进行中满工时", _status_name: "进行中", _category: "in_progress", _issue_type: "任务", _plan_end: todayIso, _estimated: 8, _actual: 8 },
+    { uuid: "s2", summary: "未开始任务", _status_name: "未开始", _category: "to_do", _issue_type: "任务", _plan_end: todayIso, _estimated: 8, _actual: 0 },
+    { uuid: "s3", summary: "已完成任务", _status_name: "已完成", _category: "done", _issue_type: "任务", _plan_end: todayIso, _estimated: 8, _actual: 8 },
+    { uuid: "s4", summary: "完成审核中", _status_name: "完成审核中", _category: "in_progress", _issue_type: "工作任务", _plan_end: todayIso, _estimated: 8, _actual: 8 },
+  ];
+  const stage2List = await engineSandbox.filterStage2CandidatesAsync({}, sampleTasks, curYear, curMonth, {});
+  assertEqual(stage2List.length, 1, "阶段2候选应仅匹配'进行中'且工时达标的任务");
+  assertEqual(stage2List[0].uuid, "s1", "阶段2候选应为 s1");
+
+  // 6. 阶段3 候选筛选（filterStage3Candidates）
+  const stage3List = engineSandbox.filterStage3Candidates({}, sampleTasks, curYear, curMonth);
+  assertEqual(stage3List.length, 1, "阶段3候选应仅匹配非'进行中'的 in_progress 任务 (如完成审核中)");
+  assertEqual(stage3List[0].uuid, "s4", "阶段3候选应为 s4");
+
+  // 6b. 模拟工时提交后 _actual 与 _remaining 更新
+  const taskToUpdate = { uuid: "u1", summary: "WK1", _status_name: "进行中", _category: "in_progress", _issue_type: "任务", _plan_end: todayIso, _estimated: 48, _actual: 43, _remaining: 5 };
+  const mockTasks = [taskToUpdate];
+  const mockTaskMap = new Map(mockTasks.map(t => [t.uuid, t]));
+  const mockOkResult = [{ entry: { task_uuid: "u1", hours: 4 } }, { entry: { task_uuid: "u1", hours: 1 } }];
+  for (const r of mockOkResult) {
+    const t = mockTaskMap.get(r.entry.task_uuid);
+    if (t) {
+      t._actual = Math.round(((t._actual || 0) + r.entry.hours) * 100) / 100;
+      t._remaining = Math.max(0, Math.round(((t._remaining || 0) - r.entry.hours) * 100) / 100);
+    }
+  }
+  assertEqual(taskToUpdate._actual, 48, "提交 5h 后 _actual 应更新为 48h");
+  assertEqual(taskToUpdate._remaining, 0, "提交 5h 后 _remaining 应更新为 0h");
+  const stage2UpdatedList = await engineSandbox.filterStage2CandidatesAsync({}, mockTasks, curYear, curMonth);
+  assertEqual(stage2UpdatedList.length, 1, "工时更新后应符合阶段2候选要求");
+
+  // 7. 辅助函数测试 (dateToStr, weekdayName)
+  assertEqual(engineSandbox.dateToStr(new Date(2026, 7, 26)), "2026-08-26", "dateToStr 应输出标准 YYYY-MM-DD");
+  assert(engineSandbox.weekdayName("2026-08-26").startsWith("周"), "weekdayName 应返回有效星期文本");
 
   // --- 静态检查：manifest.json ---
   console.log("\n[manifest.json]");

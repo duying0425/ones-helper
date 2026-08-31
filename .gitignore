@@ -7,3 +7,5 @@ probe*.py
 build/
 dist/
 *.spec
+*.pem
+*.zip

@@ -12,6 +12,13 @@ import { applyI18n, t } from "./i18n.js";
 // 注入 i18n 文案
 applyI18n();
 
+// 渲染版本号
+const manifest = typeof chrome !== "undefined" && chrome.runtime?.getManifest ? chrome.runtime.getManifest() : null;
+const versionTag = document.getElementById("dashboardVersionTag");
+if (versionTag && manifest) {
+  versionTag.textContent = `v${manifest.version}`;
+}
+
 // === 全局状态 ===
 const state = {
   step: 1,
@@ -32,13 +39,24 @@ const state = {
   // 用户在步骤2中调整的工时 {uuid: hours}
   taskHours: {},
   overtimeHours: {},
+  userNormalHours: {},
+  userOvertimeHours: {},
 
   // 分配结果
   entries: [],
   overtimeEntries: [],
 
-  // 提交结果
+  // 提交结果与状态
+  isSubmitting: false,
   submitResult: null,
+
+  // 流转状态
+  _transitionsLoaded: false,
+  _stage1Result: null,
+  _stage2Candidates: null,
+  _stage3Candidates: null,
+  _monthFullCandidates: null,
+
   finalStatus: null
 };
 
@@ -72,19 +90,24 @@ function setMonth(y, m) {
 
 monthInput.addEventListener("change", () => {
   const [y, m] = monthInput.value.split("-").map(Number);
-  if (y && m) setMonth(y, m);
+  if (y && m) {
+    setMonth(y, m);
+    loadAll();
+  }
 });
 
 btnPrevMonth.addEventListener("click", () => {
   let m = state.month - 1, y = state.year;
   if (m < 1) { m = 12; y--; }
   setMonth(y, m);
+  loadAll();
 });
 
 btnNextMonth.addEventListener("click", () => {
   let m = state.month + 1, y = state.year;
   if (m > 12) { m = 1; y++; }
   setMonth(y, m);
+  loadAll();
 });
 
 btnDebug.addEventListener("click", () => {
@@ -131,26 +154,91 @@ function goNext() {
     // 预览确认，进入步骤4
     if (state.dryRun) {
       showToast(t("dashboardPreviewMode", "预览模式：不会真实提交"), "info");
-      setStep(5); // 跳过提交，直接到状态流转（预览模式下也跳过）
-      setTimeout(() => setStep(6), 0);
+      setStep(6);
     } else {
       setStep(4);
     }
   } else if (state.step === 4) {
-    // 执行提交
-    doSubmit().then(() => setStep(5));
+    const allEntries = [...state.entries, ...state.overtimeEntries];
+    if (allEntries.length === 0 || state.submitResult) {
+      // 已完成提交或无工时，进入步骤5
+      setStep(5);
+    } else {
+      // 执行提交
+      doSubmit();
+    }
   } else if (state.step === 5) {
-    // 执行状态流转
-    doTransitions().then(() => setStep(6));
+    // 状态流转处理完毕，进入步骤6
+    setStep(6);
   } else if (state.step === 6) {
     // 完成，重新加载
     loadAll();
   }
 }
 
+// === Banner 摘要实时更新 ===
+
+function updateBannerStats({ capacity, filled, plannedNormal = 0, plannedOt = 0, attendance } = {}) {
+  const cap = capacity !== undefined ? capacity : state.capacity;
+  if (statCapacity) statCapacity.textContent = `${cap}h`;
+
+  const totalFilled = filled !== undefined ? filled : (state.filled?.ok ? state.filled.total : 0);
+  const totalPlanned = plannedNormal + plannedOt;
+
+  if (statFilled) {
+    if (totalPlanned > 0) {
+      statFilled.textContent = `${totalFilled.toFixed(1)}h (+${totalPlanned.toFixed(1)}h)`;
+    } else {
+      statFilled.textContent = `${totalFilled.toFixed(1)}h`;
+    }
+  }
+
+  if (statGap) {
+    const effectiveNormalFilled = totalFilled + plannedNormal;
+    const gap = cap - effectiveNormalFilled;
+    if (gap > 0.01) {
+      statGap.textContent = `${t("dashboardGapRemain", "还差")} ${gap.toFixed(1)}h`;
+      statGap.className = "value warn";
+    } else {
+      const otText = plannedOt > 0 ? ` (+${plannedOt.toFixed(1)}h加班)` : "";
+      statGap.textContent = `${t("dashboardGapFull", "已填满")}${otText}`;
+      statGap.className = "value ok";
+    }
+  }
+
+  if (statOvertime) {
+    const att = attendance !== undefined ? attendance : state.attendance;
+    if (att && att.ok) {
+      const otTotal = att.totalOt || 0;
+      statOvertime.textContent = plannedOt > 0 ? `${otTotal.toFixed(1)}h (已排${plannedOt.toFixed(1)}h)` : `${otTotal.toFixed(1)}h`;
+      statOvertime.title = `北森考勤连通成功！含 ${Object.keys(att.overtimeMap || {}).length} 天加班数据（共 ${otTotal.toFixed(1)}h）。超出考勤部分将按每日上限 +${state.cfg?.overtime_daily_max || 4}h 兜底分配`;
+      statOvertime.style.color = "";
+    } else {
+      statOvertime.textContent = plannedOt > 0 ? `已排 ${plannedOt.toFixed(1)}h` : t("dashboardOvertimeDisabled", "未获取");
+      statOvertime.title = (att && att.reason) || "无法获取考勤数据，加班将按每日上限模式分配";
+      statOvertime.style.color = (att && att.ok) ? "" : "var(--color-text-secondary)";
+    }
+  }
+}
+
 // === 加载数据 ===
 
 async function loadAll() {
+  state.taskHours = {};
+  state.overtimeHours = {};
+  state.userNormalHours = {};
+  state.userOvertimeHours = {};
+  state.entries = [];
+  state.overtimeEntries = [];
+  state.submitResult = null;
+  state.isSubmitting = false;
+  state._transitionsLoaded = false;
+  state._stage1Result = null;
+  state._stage2Candidates = null;
+  state._stage3Candidates = null;
+  state._monthFullCandidates = null;
+  state.finalStatus = null;
+
   setStep(1);
   mainPanel.innerHTML = `<div class="empty-state"><span class="loading"></span> ${t("dashboardLoading", "正在加载数据...")}</div>`;
 
@@ -192,23 +280,12 @@ async function loadAll() {
     state.filled = filled;
     state.tasks = taskList.tasks || [];
 
-    // 更新摘要
-    statCapacity.textContent = `${state.capacity}h`;
-    const filledTotal = filled.ok ? filled.total : 0;
-    statFilled.textContent = `${filledTotal.toFixed(1)}h`;
-    const gap = state.capacity - filledTotal;
-    statGap.textContent = gap > 0 ? `${t("dashboardGapRemain", "还差")} ${gap.toFixed(1)}h` : t("dashboardGapFull", "已填满");
-    statGap.className = `value ${gap > 0 ? "warn" : "ok"}`;
-    const otTotal = att.ok ? (att.totalOt || 0) : 0;
-    if (att.ok) {
-      statOvertime.textContent = `${otTotal.toFixed(1)}h`;
-      statOvertime.title = `北森考勤连通成功！含 ${Object.keys(att.overtimeMap || {}).length} 天加班数据`;
-      statOvertime.style.color = "";
-    } else {
-      statOvertime.textContent = t("dashboardOvertimeDisabled", "未获取");
-      statOvertime.title = att.reason || "无法获取考勤数据，请确认在浏览器中已登录 cloud.italent.cn";
-      statOvertime.style.color = "var(--color-text-secondary)";
-    }
+    // 更新摘要 Banner
+    updateBannerStats({
+      capacity: state.capacity,
+      filled: filled.ok ? filled.total : 0,
+      attendance: att
+    });
 
     if (!att.ok) {
       showToast(`考勤组件提示: ${att.reason}`, "warning");
@@ -241,37 +318,92 @@ function collectTaskHours() {
       const name = task ? (task._display || task.summary) : uuid;
       if (isOt) {
         state.overtimeHours[uuid] = { name, uuid, hours: val, is_overtime: true };
+        state.userOvertimeHours[uuid] = val;
       } else {
         state.taskHours[uuid] = { name, uuid, hours: val };
+        state.userNormalHours[uuid] = val;
+      }
+    } else {
+      if (isOt) {
+        delete state.userOvertimeHours[uuid];
+      } else {
+        delete state.userNormalHours[uuid];
       }
     }
   }
 }
 
 function computeDistribution() {
-  const filledDateMap = state.filled.ok ? removeByKeyTask(state.filled.byDate) : {};
+  const currentFilledHours = state.filled.ok ? { ...removeByKeyTask(state.filled.byDate) } : {};
   state.entries = [];
   state.overtimeEntries = [];
 
+  // 1. 正常工时分配 (每天上限 8.0h)
   if (Object.keys(state.taskHours).length > 0) {
-    const result = distributeHours(state.taskHours, state.wdays, filledDateMap);
+    const result = distributeHours(state.taskHours, state.wdays, currentFilledHours, 8.0);
     state.entries = result.entries;
+    for (const e of state.entries) {
+      currentFilledHours[e.date] = (currentFilledHours[e.date] || 0) + e.hours;
+    }
   }
 
-  // 加班分配
+  // 2. 加班工时两阶段叠加分配
   if (Object.keys(state.overtimeHours).length > 0) {
-    let dailyLimit;
-    if (state.attendance.ok && state.attendance.overtimeMap) {
-      // 考勤策略：每天 8 + 当天加班上限
+    const otDailyMax = state.cfg.overtime_daily_max || 4;
+    const hasAttendance = state.attendance && state.attendance.ok && state.attendance.overtimeMap;
+
+    if (hasAttendance) {
+      // 阶段 1：优先按考勤系统实际打卡上限分配 (每天上限 8.0 + 当天考勤加班)
       const otMap = state.attendance.overtimeMap;
-      dailyLimit = {};
-      for (const d of state.wdays) dailyLimit[d] = 8 + (otMap[d] || 0);
+      const attLimit = {};
+      for (const d of state.wdays) {
+        attLimit[d] = 8.0 + (otMap[d] || 0);
+      }
+
+      const attResult = distributeHours(state.overtimeHours, state.wdays, currentFilledHours, attLimit);
+      state.overtimeEntries.push(...attResult.entries);
+      for (const e of attResult.entries) {
+        currentFilledHours[e.date] = (currentFilledHours[e.date] || 0) + e.hours;
+      }
+
+      // 计算各任务在阶段 1 已分配的考勤工时，检查是否仍有未分配完的超出部分
+      const allocatedByTask = {};
+      for (const e of attResult.entries) {
+        allocatedByTask[e.task_uuid] = (allocatedByTask[e.task_uuid] || 0) + e.hours;
+      }
+
+      const remainingOtHours = {};
+      for (const [uuid, info] of Object.entries(state.overtimeHours)) {
+        const remaining = Math.round((info.hours - (allocatedByTask[uuid] || 0)) * 100) / 100;
+        if (remaining > 0.001) {
+          remainingOtHours[uuid] = { ...info, hours: remaining };
+        }
+      }
+
+      // 阶段 2：超出考勤部分，按每天 8 + otDailyMax 兜底补满
+      // 优先在无考勤加班（纯 8h）的日期上追加，超出后再补在已有考勤加班的日期上
+      if (Object.keys(remainingOtHours).length > 0) {
+        const fallbackLimit = 8.0 + otDailyMax;
+        const prioritizedWdays = [
+          ...state.wdays.filter(d => !otMap[d]),
+          ...state.wdays.filter(d => !!otMap[d])
+        ];
+        const fbResult = distributeHours(remainingOtHours, prioritizedWdays, currentFilledHours, fallbackLimit);
+        state.overtimeEntries.push(...fbResult.entries);
+        for (const e of fbResult.entries) {
+          currentFilledHours[e.date] = (currentFilledHours[e.date] || 0) + e.hours;
+        }
+      }
     } else {
-      // 普通加班：每天 8 + overtime_daily_max
-      dailyLimit = 8 + (state.cfg.overtime_daily_max || 4);
+      // 无考勤数据：直接按每天 8 + otDailyMax 兜底分配
+      const fallbackLimit = 8.0 + otDailyMax;
+      const result = distributeHours(state.overtimeHours, state.wdays, currentFilledHours, fallbackLimit);
+      state.overtimeEntries = result.entries;
+      for (const e of result.entries) {
+        currentFilledHours[e.date] = (currentFilledHours[e.date] || 0) + e.hours;
+      }
     }
-    const result = distributeHours(state.overtimeHours, state.wdays, filledDateMap, dailyLimit);
-    state.overtimeEntries = result.entries;
+    state.overtimeEntries.sort((a, b) => a.date.localeCompare(b.date));
   }
 }
 
@@ -289,16 +421,42 @@ async function doSubmit() {
   const allEntries = [...state.entries, ...state.overtimeEntries];
   if (allEntries.length === 0) {
     state.submitResult = { ok: [], fail: [] };
+    render();
     return;
   }
 
-  mainPanel.innerHTML = `<div class="empty-state"><span class="loading"></span> ${t("dashboardSubmitting", "正在提交")} ${allEntries.length} ...</div>`;
+  state.isSubmitting = true;
+  mainPanel.innerHTML = `<div class="empty-state"><span class="loading"></span> ${t("dashboardSubmitting", "正在提交")} ${allEntries.length} 条工时记录...</div>`;
+  updateNextBtn();
 
-  const result = await submitEntries(state.cfg, state.teamUuid, allEntries, state.debug);
-  state.submitResult = result;
-  showToast(`${t("dashboardSubmitDone", "提交完成：成功")} ${result.ok.length} ${t("dashboardSubmitFail", "条，失败")} ${result.fail.length}`,
-            result.fail.length > 0 ? "warning" : "success");
-  render();
+  try {
+    const result = await submitEntries(state.cfg, state.teamUuid, allEntries, state.debug);
+    state.submitResult = result;
+    const okHours = result.ok.reduce((s, it) => s + (it.entry?.hours || 0), 0);
+    if (state.filled && typeof state.filled.total === "number") {
+      state.filled.total += okHours;
+    }
+    const taskMap = new Map((state.tasks || []).map(t => [t.uuid, t]));
+    for (const r of result.ok) {
+      const tuuid = r.entry?.task_uuid;
+      const hours = r.entry?.hours || 0;
+      const t = taskMap.get(tuuid);
+      if (t) {
+        t._actual = Math.round(((t._actual || 0) + hours) * 100) / 100;
+        t._remaining = Math.max(0, Math.round(((t._remaining || 0) - hours) * 100) / 100);
+      }
+    }
+    updateBannerStats({ filled: state.filled?.total });
+    showToast(`${t("dashboardSubmitDone", "提交完成：成功")} ${result.ok.length} ${t("dashboardSubmitFail", "条，失败")} ${result.fail.length}`,
+              result.fail.length > 0 ? "warning" : "success");
+  } catch (e) {
+    console.error("Submit error:", e);
+    showToast(`提交发生错误: ${e.message}`, "error");
+    state.submitResult = { ok: [], fail: [{ entry: { date: "-", hours: 0, task_name: "-" }, reason: e.message }] };
+  } finally {
+    state.isSubmitting = false;
+    render();
+  }
 }
 
 // === 步骤5：状态流转 ===
@@ -334,28 +492,57 @@ async function doTransitions() {
 // === 渲染 ===
 
 function render() {
-  switch (state.step) {
-    case 1: renderStep1(); break;
-    case 2: renderStep2(); break;
-    case 3: renderStep3(); break;
-    case 4: renderStep4(); break;
-    case 5: renderStep5(); break;
-    case 6: renderStep6(); break;
+  try {
+    switch (state.step) {
+      case 1: renderStep1(); break;
+      case 2: renderStep2(); break;
+      case 3: renderStep3(); break;
+      case 4: renderStep4(); break;
+      case 5: renderStep5(); break;
+      case 6: renderStep6(); break;
+    }
+  } catch (e) {
+    console.error("Render error at step", state.step, e);
+    mainPanel.innerHTML = `<div class="empty-state" style="color:var(--color-danger)">
+      <p><b>页面渲染发生异常</b></p>
+      <p style="margin-top:8px;font-size:12px">${escapeHtml(e.message || String(e))}</p>
+    </div>`;
   }
   updateNextBtn();
 }
 
 function updateNextBtn() {
-  const labels = {
-    1: t("dashboardNextBtn", "下一步"),
-    2: t("dashboardCalcBtn", "计算分配"),
-    3: state.dryRun ? t("dashboardPreviewDone", "完成预览") : t("dashboardConfirmSubmit", "确认提交"),
-    4: t("dashboardSubmitting", "提交中") + "...",
-    5: t("dashboardNextBtn", "下一步"),
-    6: t("dashboardRestart", "重新开始")
-  };
-  btnNext.textContent = labels[state.step] || t("dashboardNextBtn", "下一步");
-  btnNext.disabled = state.step === 4;  // 提交中禁用
+  let nextLabel = t("dashboardNextBtn", "下一步");
+  let nextDisabled = false;
+
+  if (state.step === 1) {
+    nextLabel = t("dashboardNextBtn", "下一步");
+    nextDisabled = !state.filled;
+  } else if (state.step === 2) {
+    nextLabel = t("dashboardCalcBtn", "计算分配");
+  } else if (state.step === 3) {
+    nextLabel = state.dryRun ? t("dashboardPreviewDone", "完成预览") : t("dashboardNextBtn", "下一步");
+  } else if (state.step === 4) {
+    const allEntries = [...state.entries, ...state.overtimeEntries];
+    if (state.isSubmitting) {
+      nextLabel = t("dashboardSubmitting", "正在提交") + "...";
+      nextDisabled = true;
+    } else if (state.submitResult || allEntries.length === 0) {
+      nextLabel = t("dashboardNextBtn", "下一步");
+      nextDisabled = false;
+    } else {
+      nextLabel = t("dashboardConfirmSubmit", "确认提交");
+      nextDisabled = false;
+    }
+  } else if (state.step === 5) {
+    nextLabel = t("dashboardNextBtn", "下一步");
+    nextDisabled = !state._transitionsLoaded;
+  } else if (state.step === 6) {
+    nextLabel = t("dashboardRestart", "重新开始");
+  }
+
+  btnNext.textContent = nextLabel;
+  btnNext.disabled = nextDisabled;
 }
 
 function renderStep1() {
@@ -408,15 +595,17 @@ function renderStep2() {
   const monthRemain = Math.max(0, state.capacity - totalFilled);
   const defaults = calcDefaultHours(state.tasks, taskFilled, state.capacity, totalFilled);
 
-  const otAvailable = state.attendance.ok ? state.attendance.totalOt || 0 : 0;
-  const showOvertime = monthRemain < 0.01;  // 月度已满才显示加班
+  const otAvailable = state.attendance.ok ? (state.attendance.totalOt || 0) : 0;
+  const otDailyMax = state.cfg.overtime_daily_max || 4;
 
   const html = [];
 
-  html.push(`<div class="section-title">正常工时输入 <span class="badge">月度剩余 ${monthRemain.toFixed(1)}h</span></div>`);
+  // 1. 正常工时区域
   if (monthRemain < 0.01) {
-    html.push(`<div class="empty-state">月度容量已满，跳过正常工时，直接进入加班</div>`);
+    html.push(`<div class="section-title">正常工时输入 <span class="badge">月度容量已满（${state.capacity}h）</span></div>`);
+    html.push(`<div class="empty-state">月度常规工时已填满，无需录入正常工时，可直接在下方录入加班工时</div>`);
   } else {
+    html.push(`<div class="section-title">正常工时输入 <span class="badge">月度剩余 ${monthRemain.toFixed(1)}h</span> <span class="badge" id="badgeNormalPlanned">本次已排 0.0h</span></div>`);
     html.push(`<div class="card"><table class="table task-table">`);
     html.push(`<thead><tr>
       <th class="col-proj">项目</th><th>任务</th><th class="col-status">状态</th>
@@ -425,7 +614,8 @@ function renderStep2() {
     </tr></thead><tbody>`);
     for (const t of state.tasks) {
       const def = defaults[t.uuid] || { hours: 0, filed: 0, taskRem: 0 };
-      if (def.taskRem <= 0 && def.filed <= 0) continue;  // 无剩余也无已填，跳过
+      if (def.taskRem <= 0 && def.filed <= 0) continue; // 无剩余也无已填，跳过
+      const userVal = state.userNormalHours[t.uuid] !== undefined ? state.userNormalHours[t.uuid] : def.hours;
       html.push(`<tr>
         <td>${escapeHtml(t._proj || "")}</td>
         <td>${escapeHtml(t.summary || "")}</td>
@@ -435,20 +625,21 @@ function renderStep2() {
         <td class="col-hours">
           <input class="input hours-input" type="number" min="0" step="0.5"
             data-task-uuid="${escapeHtml(t.uuid)}"
-            value="${def.hours}" placeholder="0" />
+            value="${userVal}" placeholder="0" />
         </td>
       </tr>`);
     }
     html.push(`</tbody></table></div>`);
   }
 
-  // 加班工时
-  if (showOvertime) {
-    html.push(`<div class="section-title">加班工时输入 ${
-      otAvailable > 0
-        ? `<span class="badge">考勤系统共计 ${otAvailable}h 加班可分配</span>`
-        : `<span class="badge">每天上限 ${state.cfg.overtime_daily_max || 4}h</span>`
-    }</div>`);
+  // 2. 加班工时区域（支持考勤优先 + 4h/天 兜底补满）
+  html.push(`<div class="section-title" style="margin-top:20px">加班工时输入 ${
+    otAvailable > 0
+      ? `<span class="badge">考勤系统共计 ${otAvailable.toFixed(1)}h 可用</span>`
+      : ""
+  }<span class="badge">支持每日上限 +${otDailyMax}h 兜底补满</span> <span class="badge" id="badgeOtPlanned">本次已排 0.0h</span></div>`);
+
+  if (state.tasks.length > 0) {
     html.push(`<div class="card"><table class="table task-table">`);
     html.push(`<thead><tr>
       <th class="col-proj">项目</th><th>任务</th><th class="col-status">状态</th>
@@ -456,23 +647,69 @@ function renderStep2() {
       <th class="col-hours">加班工时 (h)</th>
     </tr></thead><tbody>`);
     for (const t of state.tasks) {
-      if ((t._remaining || 0) <= 0) continue;
+      const rem = t._remaining || 0;
+      const userOt = state.userOvertimeHours[t.uuid] !== undefined ? state.userOvertimeHours[t.uuid] : 0;
       html.push(`<tr>
         <td>${escapeHtml(t._proj || "")}</td>
         <td>${escapeHtml(t.summary || "")}</td>
         <td><span class="status-badge ${t._category}">${escapeHtml(t._status_name || "")}</span></td>
-        <td class="col-remain">${t._remaining.toFixed(0)}h</td>
+        <td class="col-remain">${rem > 0 ? rem.toFixed(0) + "h" : "-"}</td>
         <td class="col-hours">
           <input class="input hours-input" type="number" min="0" step="0.5"
             data-task-uuid="${escapeHtml(t.uuid)}" data-overtime="1"
-            value="0" placeholder="0" />
+            value="${userOt}" placeholder="0" />
         </td>
       </tr>`);
     }
     html.push(`</tbody></table></div>`);
+  } else {
+    html.push(`<div class="empty-state">未找到活跃任务</div>`);
   }
 
   mainPanel.innerHTML = html.join("");
+  setupStep2Listeners();
+}
+
+function setupStep2Listeners() {
+  const syncStep2Stats = () => {
+    let totalNormal = 0;
+    let totalOt = 0;
+    const inputs = mainPanel.querySelectorAll("input[data-task-uuid]");
+    for (const inp of inputs) {
+      const uuid = inp.dataset.taskUuid;
+      const isOt = inp.dataset.overtime === "1";
+      const val = parseFloat(inp.value) || 0;
+      if (isOt) {
+        totalOt += val;
+        if (val > 0) state.userOvertimeHours[uuid] = val;
+        else delete state.userOvertimeHours[uuid];
+      } else {
+        totalNormal += val;
+        if (val > 0) state.userNormalHours[uuid] = val;
+        else delete state.userNormalHours[uuid];
+      }
+    }
+
+    const badgeNormalPlanned = document.getElementById("badgeNormalPlanned");
+    if (badgeNormalPlanned) {
+      badgeNormalPlanned.textContent = `本次已排 ${totalNormal.toFixed(1)}h`;
+    }
+    const badgeOtPlanned = document.getElementById("badgeOtPlanned");
+    if (badgeOtPlanned) {
+      badgeOtPlanned.textContent = `本次已排 ${totalOt.toFixed(1)}h`;
+    }
+
+    updateBannerStats({ plannedNormal: totalNormal, plannedOt: totalOt });
+  };
+
+  mainPanel.addEventListener("input", e => {
+    if (e.target && e.target.matches("input[data-task-uuid]")) {
+      syncStep2Stats();
+    }
+  });
+
+  // 初始进入步骤2时触发一次统计更新
+  syncStep2Stats();
 }
 
 function renderStep3() {
@@ -484,10 +721,12 @@ function renderStep3() {
   const totalFilled = state.filled.ok ? state.filled.total : 0;
   const totalAfter = totalFilled + newPlanned + otPlanned;
 
+  updateBannerStats({ plannedNormal: newPlanned, plannedOt: otPlanned });
+
   const html = [];
   html.push(`<div class="section-title">分配预览 <span class="badge">本次新增 ${newPlanned.toFixed(1)}h${
     otPlanned > 0 ? ` + 加班 ${otPlanned.toFixed(1)}h` : ""
-  }，提交后 ${totalAfter.toFixed(1)}h / ${state.capacity}h</span></span></div>`);
+  }，提交后 ${totalAfter.toFixed(1)}h / ${state.capacity}h</span></div>`);
 
   // 日历视图
   html.push(`<div class="card calendar-card">`);
@@ -566,12 +805,24 @@ function renderStep3() {
 }
 
 function renderStep4() {
-  const allEntries = [...state.entries, ...state.overtimeEntries];
+  if (state.isSubmitting) {
+    const allEntries = [...state.entries, ...state.overtimeEntries];
+    mainPanel.innerHTML = `<div class="empty-state"><span class="loading"></span> ${t("dashboardSubmitting", "正在提交")} ${allEntries.length} 条工时记录...</div>`;
+    return;
+  }
   if (state.submitResult) {
     renderSubmitLog();
     return;
   }
+  const allEntries = [...state.entries, ...state.overtimeEntries];
   const total = allEntries.reduce((a, e) => a + e.hours, 0);
+  if (allEntries.length === 0) {
+    mainPanel.innerHTML = `<div class="empty-state">
+      <p>未输入工时记录，无需提交</p>
+      <p style="margin-top:8px;color:var(--color-text-secondary)">点击右下角"下一步"继续</p>
+    </div>`;
+    return;
+  }
   mainPanel.innerHTML = `<div class="empty-state">
     <p>即将提交 <b>${allEntries.length}</b> 条工时记录，共 <b>${total.toFixed(1)}h</b></p>
     <p style="margin-top:8px;color:var(--color-text-secondary)">点击右下角"确认提交"开始</p>
@@ -593,7 +844,23 @@ function renderSubmitLog() {
   mainPanel.innerHTML = html.join("");
 }
 
-function renderStep5() {
+async function renderStep5() {
+  if (!state._transitionsLoaded) {
+    mainPanel.innerHTML = `<div class="empty-state"><span class="loading"></span> 正在计算状态流转候选...</div>`;
+    btnNext.disabled = true;
+    try {
+      await doTransitions();
+    } catch (e) {
+      console.error("Transitions load error:", e);
+      showToast("流转数据计算失败: " + e.message, "error");
+    } finally {
+      state._transitionsLoaded = true;
+      updateNextBtn();
+      renderStep5();
+    }
+    return;
+  }
+
   const html = [];
 
   // 阶段1结果
@@ -712,6 +979,10 @@ function renderStep6() {
         mainPanel.innerHTML = `<div class="empty-state">刷新失败</div>`;
         return;
       }
+      if (state.filled) {
+        state.filled.total = r.total;
+      }
+      updateBannerStats({ filled: r.total });
       const gap = state.capacity - r.total;
       html.push(`<div class="card"><table class="table"><thead><tr>
         <th>项目</th><th>任务</th><th>状态</th>

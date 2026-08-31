@@ -7,6 +7,13 @@ import { checkAuth, checkItalentStatus } from "./engine.js";
 // 注入 i18n 文案
 applyI18n();
 
+// 渲染版本号
+const manifest = typeof chrome !== "undefined" && chrome.runtime?.getManifest ? chrome.runtime.getManifest() : null;
+const optVersionTag = document.getElementById("optionsVersionTag");
+if (optVersionTag && manifest) {
+  optVersionTag.textContent = `v${manifest.version}`;
+}
+
 const fields = {
   overtime_daily_max: document.getElementById("overtime_daily_max"),
   italent_standard_work_hours: document.getElementById("italent_standard_work_hours"),
